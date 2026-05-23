@@ -11,7 +11,7 @@
       <header class="hero">
         <div class="statusbar" aria-hidden="true">
           <span>9:41</span>
-          <span>●●●  Wi-Fi  ▭</span>
+          <span>●●● Wi-Fi ▭</span>
         </div>
         <div class="topline">
           <div>
@@ -19,19 +19,16 @@
             <h1>안녕하세요, 승현님!</h1>
             <p>오늘도 멋진 플레이 기대할게요.</p>
           </div>
-          <button class="icon-button" type="button" aria-label="알림">⌁</button>
+          <button class="icon-button" data-toast="새 알림은 아직 없어요" type="button" aria-label="알림">⌁</button>
         </div>
 
-        <section class="player-card" aria-labelledby="profile-title">
+        <button class="player-card" id="homePlayerCard" type="button" aria-labelledby="profile-title">
           <div class="avatar-card">
-            <div class="portrait" aria-hidden="true">
-              <span>승현</span>
-            </div>
+            <div class="portrait" aria-hidden="true"><span>승현</span></div>
             <strong>78</strong>
             <small>OVR</small>
             <span class="badge">CAM</span>
           </div>
-
           <div class="profile-copy">
             <h2 id="profile-title">승현</h2>
             <p class="pill">공미 · 프리롤</p>
@@ -39,37 +36,28 @@
             <div class="ovr-line">
               <span>OVR</span>
               <strong id="homeOvr">78</strong>
-              <em>▲ 3</em>
+              <em class="rise">▲ 3</em>
             </div>
+            <p class="position-shift">최근 포지션 변화: 프리롤 +7%</p>
           </div>
-
           <div class="mini-radar" id="homeRadar" aria-label="핵심 능력치 레이더"></div>
-
           <div class="card-metrics">
-            <div>
-              <small>최근 폼</small>
-              <strong>안정적</strong>
-            </div>
-            <div>
-              <small>OVR 변화</small>
-              <strong class="green">▲ 3</strong>
-            </div>
-            <div>
-              <small>플레이 스타일</small>
-              <strong class="gold">창의형 플레이메이커</strong>
-            </div>
+            <div><small>최근 폼</small><strong>안정적</strong></div>
+            <div><small>성장 능력</small><strong class="green">패스 +2</strong></div>
+            <div><small>플레이 스타일</small><strong class="gold">창의형 플레이메이커</strong></div>
           </div>
-        </section>
+        </button>
       </header>
 
       <section class="content-view active" data-view="home">
         <div class="section-head">
           <h2>진행 중인 평가</h2>
-          <button type="button">전체 보기 ›</button>
+          <button data-toast="진행 중인 평가 1개가 있어요" type="button">전체 보기 ›</button>
         </div>
         <article class="match-progress">
           <div class="match-icon">⚽</div>
           <div>
+            <span class="live-pill">수집 중</span>
             <h3>상암 목요일 풋살</h3>
             <p>2026.05.23 (토) 21:00 · 상암 풋살장</p>
             <div class="faces" aria-label="참가자 6명 중 4명 완료">
@@ -85,33 +73,28 @@
 
         <div class="section-head">
           <h2>최근 경기</h2>
-          <button type="button">전체 보기 ›</button>
+          <button data-toast="최근 경기 상세는 준비 중입니다" type="button">전체 보기 ›</button>
         </div>
         <div class="recent-list" id="recentMatches"></div>
 
         <h2 class="section-title">이번 달 요약</h2>
+        <div class="growth-note">
+          최근 플레이가 패스 중심으로 바뀌고 있고, 수비 전환 참여도도 함께 올라왔어요.
+        </div>
         <div class="summary-grid">
-          <article>
-            <small>최근 상승 능력치</small>
-            <strong>침착성 +6</strong>
-            <p>지난 달 대비</p>
-          </article>
-          <article>
-            <small>자주 언급된 특징</small>
-            <strong>패스 센스<br />볼 컨트롤</strong>
-            <p>동료들이 많이 언급했어요</p>
-          </article>
-          <article>
-            <small>주 포지션 변화</small>
-            <strong>프리롤 비율 증가</strong>
-            <p>28% → 35%</p>
-          </article>
+          <article><small>최근 상승 능력치</small><strong class="green">침착성 +6</strong><p>압박 상황 처리 개선</p></article>
+          <article><small>플레이 성향 변화</small><strong>패스 중심 플레이 증가</strong><p>연결 선택 비율 +12%</p></article>
+          <article><small>수비 참여도</small><strong class="purple-text">프리롤 비율 증가</strong><p>28% → 35%</p></article>
         </div>
       </section>
 
       <section class="content-view" data-view="evaluate">
         <div class="flow-card">
           <p class="eyebrow purple">경기 평가</p>
+          <div class="eval-target">
+            <span>현재 평가 대상</span>
+            <strong id="currentTarget">김민수</strong>
+          </div>
           <h2 id="stepTitle">선수 선택</h2>
           <p id="stepHelp">본인을 제외한 동료 5명을 평가합니다.</p>
           <div class="stepper" id="stepper"></div>
@@ -124,21 +107,26 @@
           <h2>공식 선수카드</h2>
           <button type="button" data-go="reflection">자가 회고 보기 ›</button>
         </div>
-        <article class="analysis-card">
+        <button class="analysis-card" id="officialCard" type="button">
           <div class="analysis-top">
             <div class="portrait tall" aria-hidden="true"><span>10</span></div>
             <div>
               <p class="pill">POM</p>
               <h2>김민수</h2>
               <p>CAM · 프리롤</p>
-              <strong class="mega">78</strong>
-              <small>창의형 플레이메이커</small>
+              <strong class="mega">78 <em>+3</em></strong>
+              <small>창의형 플레이메이커 · Advanced Playmaker</small>
             </div>
           </div>
+          <div class="change-strip">
+            <span>패스 +2</span><span>멘탈 +1</span><span>활동성 +1</span>
+          </div>
           <div class="radar-large" id="cardRadar"></div>
-        </article>
+        </button>
         <h2 class="section-title">포지션 적응도</h2>
         <div class="position-grid" id="positionGrid"></div>
+        <h2 class="section-title">플레이 스타일 태그</h2>
+        <div class="style-tags" id="styleTags"></div>
         <h2 class="section-title">익명 한 줄 평</h2>
         <div class="quote-list" id="quotes"></div>
       </section>
@@ -148,38 +136,28 @@
           <p class="eyebrow purple">개인 회고 카드</p>
           <h2>내가 생각한 나</h2>
           <p>공식 선수카드와 분리된 자가 기록입니다.</p>
-          <label>
-            한 줄 회고
-            <textarea id="reflectionText" rows="4">오늘은 공을 오래 끌지 않고 빠르게 연결하려고 했다.</textarea>
-          </label>
-          <label>
-            오늘 만족도
-            <input id="selfScore" type="range" min="1" max="10" value="7" />
-          </label>
-          <label>
-            다음 경기 목표
-            <input id="nextGoal" value="수비 전환 첫 3초 더 빠르게 반응하기" />
-          </label>
-          <div class="self-result">
-            <span>자가 OVR</span>
-            <strong id="selfOvr">79</strong>
-          </div>
+          <label>한 줄 회고<textarea id="reflectionText" rows="4">오늘은 공을 오래 끌지 않고 빠르게 연결하려고 했다.</textarea></label>
+          <label>오늘 만족도<input id="selfScore" type="range" min="1" max="10" value="7" /></label>
+          <label>다음 경기 목표<input id="nextGoal" value="수비 전환 첫 3초 더 빠르게 반응하기" /></label>
+          <div class="self-result"><span>자가 OVR</span><strong id="selfOvr">79</strong></div>
+          <button class="primary full" id="saveReflection" type="button">회고 저장하기</button>
         </article>
       </section>
 
       <section class="content-view" data-view="friends">
         <div class="section-head">
           <h2>친구</h2>
-          <button type="button">요청 보내기</button>
+          <button id="friendRequestOpen" type="button">요청 보내기</button>
         </div>
-        <div class="friend-list">
-          <article><span>김민수</span><button type="button">친구</button></article>
-          <article><span>박현우</span><button type="button">수락</button></article>
-          <article><span>이지훈</span><button type="button">친구</button></article>
+        <div class="friend-highlight">
+          <span>같이 성장 중</span>
+          <strong>김민수 OVR +3 · 패스 센스 상승</strong>
+          <p>나와 다른 점: 민수는 창의형, 승현님은 안정 연결형에 가까워요.</p>
         </div>
+        <div class="friend-list" id="friendList"></div>
       </section>
 
-      <button class="fab" data-go="evaluate" type="button" aria-label="경기 평가 생성">＋</button>
+      <button class="fab" id="fab" type="button" aria-label="빠른 작업">＋</button>
       <nav class="tabbar" aria-label="주요 메뉴">
         <button class="active" data-go="home" type="button">⌂<span>홈</span></button>
         <button data-go="evaluate" type="button">□<span>평가</span></button>
@@ -188,6 +166,11 @@
         <button data-go="friends" type="button">♡<span>친구</span></button>
       </nav>
     </main>
+
+    <div class="overlay" id="overlay" hidden>
+      <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+    </div>
+    <div class="toast" id="toast" aria-live="polite"></div>
     <script src="./app.js"></script>
   </body>
 </html>
