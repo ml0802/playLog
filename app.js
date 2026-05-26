@@ -13,6 +13,84 @@ const commonRatings = {
 
 const positionRatings = { attack: null, cam: 8, cdm: 7, defense: null, free: 8.6 };
 const tendencies = { teamwork: 8, aggression: 7, boldness: 7, creativity: 9, vision: 8, anticipation: 7, leadership: 6, competitiveness: 8 };
+const tendencyEvaluationCount = 4;
+const positionLabels = {
+  attack: ["공격", "ST"],
+  cam: ["공미", "CAM"],
+  cdm: ["수미", "CDM"],
+  defense: ["수비", "CB"],
+  free: ["프리롤", "FR"],
+};
+const playTypeCatalog = {
+  attack: [
+    ["침투형 공격수", "Advanced Forward · AF"],
+    ["골잡이형 포처", "Poacher · P"],
+    ["연계형 공격수", "Target Forward · TF"],
+    ["압박형 포워드", "Pressing Forward · PF"],
+    ["자유형 공격수", "False Nine · F9"],
+  ],
+  cam: [
+    ["창의형 플레이메이커", "Advanced Playmaker · AP"],
+    ["자유형 플레이메이커", "Trequartista · T"],
+    ["공격 가담형 공미", "Shadow Striker · SS"],
+    ["조율형 플레이메이커", "Enganche · EG"],
+    ["로밍 플레이메이커", "Roaming Playmaker · RPM"],
+  ],
+  cdm: [
+    ["후방 조율형 미드필더", "Deep Lying Playmaker · DLP"],
+    ["압박형 미드필더", "Ball Winning Midfielder · BWM"],
+    ["안정형 앵커", "Anchor · A"],
+    ["활동형 올라운더", "Box To Box Midfielder · BBM"],
+    ["자유 조율형 플레이메이커", "Regista · RGA"],
+  ],
+  defense: [
+    ["안정형 수비수", "Central Defender · CD"],
+    ["빌드업형 수비수", "Ball Playing Defender · BPD"],
+    ["수비 집중형 수비수", "No-Nonsense Centre-Back · NCB"],
+    ["활동형 수비수", "Wide Centre-Back · WCB"],
+    ["예측형 수비수", "Predictive Defender"],
+  ],
+  free: [
+    ["전방위 로머", "All-Round Roamer"],
+    ["연결형 플레이메이커", "Link Playmaker"],
+    ["유동형 플레이어", "Fluid Player"],
+    ["에너지형 프리롤", "Energy Freerole"],
+    ["올라운드 플레이어", "All-Round Player"],
+  ],
+};
+const avatarSheets = {
+  attack: "./assets/preset-attack.png",
+  cam: "./assets/preset-cam.png",
+  cdm: "./assets/preset-cdm.png",
+  defense: "./assets/preset-defense.png",
+  free: "./assets/preset-free.png",
+};
+const matchAnalysis = {
+  ovr: { previous: 75, current: 78 },
+  statChanges: [
+    { label: "패스", delta: 3, identityPriority: 3 },
+    { label: "게임 센스", delta: 2, identityPriority: 2 },
+    { label: "공간 연결", delta: 1, identityPriority: 3 },
+    { label: "활동성", delta: 1, identityPriority: 1 },
+    { label: "드리블", delta: -1, identityPriority: 1 },
+    { label: "슈팅 정확도", delta: -1, identityPriority: 0 },
+    { label: "마무리", delta: -1, identityPriority: 0 },
+  ],
+  styleChanges: [
+    {
+      label: "연결형 플레이메이커 성향 증가",
+      basis: "안정적 패스 + 빌드업 + 팀플레이 상승",
+    },
+    {
+      label: "에너지형 프리롤 강화",
+      basis: "활동량 + 체력 + 적극성 상승",
+    },
+    {
+      label: "로밍 움직임 증가",
+      basis: "오프더볼 + 활동량 + 공간 연결 상승",
+    },
+  ],
+};
 const players = ["김민수", "이지훈", "박현우", "정우진", "최성민"];
 const positions = [
   ["attack", "공격", "골문 앞에서 득점을 맡아요"],
@@ -29,6 +107,7 @@ let selectedPosition = "cam";
 let commonScore = 7;
 let positionScore = 8;
 let selectedTraits = ["creativity", "vision"];
+let selectedAvatar = "free-1";
 let toastTimer;
 let friends = [
   ["김민수", "OVR +3 · 창의형 플레이메이커"],
@@ -60,18 +139,71 @@ function radarStats(ratings) {
   ].map(([label, score]) => [label, Math.round(40 + score * 5.5)]);
 }
 
-function playType(positionKey, traits) {
-  if (!Object.keys(traits).length) return ["분석 준비중", "More data needed"];
-  if (positionKey === "cam" && traits.creativity >= 8 && traits.vision >= 8) return ["창의형 플레이메이커", "Advanced Playmaker · AP"];
-  if (positionKey === "free" && traits.boldness >= 7) return ["흐름을 바꾸는 프리롤", "Free Role · FR"];
-  if (traits.aggression >= 8) return ["압박형 수비수", "Pressing Defender · PD"];
-  if (traits.teamwork >= 8) return ["안정 연결형", "Support Link · SL"];
-  return ["균형형 플레이어", "Balanced Role · BR"];
+function representativePosition() {
+  return Object.entries(positionRatings)
+    .filter(([, rating]) => typeof rating === "number")
+    .sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function playType(positionKey, traits, evaluationCount = tendencyEvaluationCount) {
+  if (evaluationCount < 2) return null;
+  const weightedScores = {
+    attack: [traits.anticipation + traits.boldness, traits.boldness + traits.competitiveness, traits.teamwork + traits.vision, traits.aggression + traits.competitiveness, traits.creativity + traits.vision],
+    cam: [traits.creativity + traits.vision, traits.creativity + traits.boldness, traits.boldness + traits.anticipation, traits.vision + traits.teamwork, traits.vision + traits.aggression],
+    cdm: [traits.vision + traits.teamwork, traits.aggression + traits.competitiveness, traits.teamwork + traits.anticipation, traits.aggression + traits.leadership, traits.creativity + traits.vision],
+    defense: [traits.teamwork + traits.leadership, traits.vision + traits.creativity, traits.competitiveness + traits.leadership, traits.aggression + traits.teamwork, traits.anticipation + traits.vision],
+    free: [traits.boldness + traits.aggression, traits.vision + traits.teamwork + traits.creativity, traits.creativity + traits.boldness, traits.aggression + traits.competitiveness, traits.teamwork + traits.leadership],
+  };
+  const rankings = playTypeCatalog[positionKey]
+    .map(([name, sub], index) => ({ name, sub, score: weightedScores[positionKey][index] }))
+    .sort((a, b) => b.score - a.score);
+  return { primary: rankings[0], support: rankings.slice(1, 3) };
+}
+
+function avatarPresetItems() {
+  return Object.entries(playTypeCatalog).flatMap(([positionKey, types]) =>
+    types.map(([name, sub], index) => ({
+      key: `${positionKey}-${index}`,
+      positionKey,
+      name,
+      sub,
+      index,
+      image: avatarSheets[positionKey],
+    })),
+  );
+}
+
+function currentAvatarPreset() {
+  return avatarPresetItems().find((preset) => preset.key === selectedAvatar) || avatarPresetItems()[0];
+}
+
+function presetStyle(preset) {
+  return `--preset-image:url('${preset.image}');--preset-position:${preset.index * 25}%`;
+}
+
+function rankedStatChanges(direction) {
+  return matchAnalysis.statChanges
+    .filter((stat) => (direction === "up" ? stat.delta > 0 : stat.delta < 0))
+    .sort((a, b) => {
+      const deltaOrder = direction === "up" ? b.delta - a.delta : a.delta - b.delta;
+      return deltaOrder || b.identityPriority - a.identityPriority;
+    })
+    .slice(0, 3);
+}
+
+function renderResultStats(direction) {
+  return rankedStatChanges(direction)
+    .map((change, index) => {
+      const width = Math.max(34, Math.round(Math.abs(change.delta) / 3 * 100));
+      return `<div class="result-stat ${direction}"><b>${index + 1}</b><small>${change.label}</small><i aria-hidden="true"><span style="width:${width}%"></span></i><strong>${change.delta > 0 ? "+" : ""}${change.delta}</strong></div>`;
+    })
+    .join("");
 }
 
 function renderRadar(target, stats, size = 140) {
   const center = size / 2;
-  const maxRadius = size * 0.35;
+  const detailed = size > 180;
+  const maxRadius = size * (detailed ? 0.27 : 0.35);
   const points = stats.map(([, score], index) => {
     const angle = Math.PI * 2 * (index / stats.length) - Math.PI / 2;
     const radius = (score / 100) * maxRadius;
@@ -86,9 +218,11 @@ function renderRadar(target, stats, size = 140) {
   }).join("");
   const labels = stats.map(([label, score], index) => {
     const angle = Math.PI * 2 * (index / stats.length) - Math.PI / 2;
-    const x = center + Math.cos(angle) * maxRadius * 1.28;
-    const y = center + Math.sin(angle) * maxRadius * 1.28;
-    return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${label}${size > 180 ? ` ${score}` : ""}</text>`;
+      const x = center + Math.cos(angle) * maxRadius * (detailed ? 1.47 : 1.28);
+      const y = center + Math.sin(angle) * maxRadius * (detailed ? 1.47 : 1.28);
+      return detailed
+        ? `<text x="${x}" y="${y}" text-anchor="middle"><tspan x="${x}" dy="-8">${label}</tspan><tspan x="${x}" dy="22">${score}</tspan></text>`
+        : `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${label}</text>`;
   }).join("");
 
   target.innerHTML = `
@@ -130,12 +264,50 @@ function openSheet(kind) {
       <button class="primary full" id="sendFriendRequest" type="button">친구 요청 보내기</button>
     `,
     card: `
-      <h3>최근 변화</h3>
-      <p>지난 경기 대비 OVR +3. 패스 선택이 늘고 멘탈 지표가 안정적으로 올라왔어요.</p>
-      <div class="change-strip"><span>패스 +2</span><span>멘탈 +1</span><span>프리롤 +7%</span></div>
+      <div class="result-title">
+        <h3>MATCH ANALYSIS</h3>
+        <button data-close-sheet type="button" aria-label="결과창 닫기">×</button>
+      </div>
+      <p class="result-description">이번 경기에서 가장 큰 변화가 있었던 능력치입니다.</p>
+      <div class="result-overall">
+        <div><small>OVR 변화</small><strong>${matchAnalysis.ovr.previous} → ${matchAnalysis.ovr.current}</strong></div>
+        <em>▲ +${matchAnalysis.ovr.current - matchAnalysis.ovr.previous}</em>
+      </div>
+      <div class="result-section up">
+        <div class="result-section-head">상승 스탯 TOP 3 <span>↗</span></div>
+        <div class="result-grid">${renderResultStats("up")}</div>
+      </div>
+      <div class="result-section down">
+        <div class="result-section-head">하락 스탯 TOP 3 <span>↘</span></div>
+        <div class="result-grid">${renderResultStats("down")}</div>
+      </div>
+      <p class="analysis-note">※ 동점인 경우 대표 플레이유형의 핵심 능력을 우선 표시합니다.</p>
+      <div class="style-change">
+        <small>플레이 성향 변화</small>
+        <p>관련 능력치 묶음의 변화로 분석했습니다.</p>
+        <div>${matchAnalysis.styleChanges.map((change, index) => `<article class="style-trend tone-${index + 1}"><i aria-hidden="true"></i><strong>${change.label}</strong><span>${change.basis}</span></article>`).join("")}</div>
+      </div>
       <button class="primary full" data-close-sheet type="button">확인</button>
     `,
+    avatar: `
+      <h3>프로필 프리셋 선택</h3>
+      <p>플레이유형마다 다른 선수 캐릭터 프리셋을 선택할 수 있어요.</p>
+      <div class="preset-scroll">
+        ${Object.entries(playTypeCatalog).map(([positionKey, types]) => `
+          <section class="preset-group">
+            <h4>${positionLabels[positionKey][0]}</h4>
+            <div class="preset-grid">
+              ${types.map(([name], index) => {
+                const preset = { key: `${positionKey}-${index}`, positionKey, name, index, image: avatarSheets[positionKey] };
+                return `<button class="preset-card ${selectedAvatar === preset.key ? "selected" : ""}" data-avatar="${preset.key}" type="button"><span class="preset-thumb" style="${presetStyle(preset)}"></span><strong>${name}</strong></button>`;
+              }).join("")}
+            </div>
+          </section>
+        `).join("")}
+      </div>
+    `,
   };
+  sheet.className = `sheet ${kind === "card" ? "result-sheet" : ""}`;
   sheet.innerHTML = templates[kind];
   overlay.hidden = false;
 
@@ -149,7 +321,15 @@ function openSheet(kind) {
   sheet.querySelectorAll("[data-toast-sheet]").forEach((button) => {
     button.addEventListener("click", () => showToast(button.dataset.toastSheet));
   });
-  sheet.querySelector("[data-close-sheet]")?.addEventListener("click", closeSheet);
+  sheet.querySelectorAll("[data-close-sheet]").forEach((button) => button.addEventListener("click", closeSheet));
+  sheet.querySelectorAll("[data-avatar]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedAvatar = button.dataset.avatar;
+      applyAvatarPreset();
+      closeSheet();
+      showToast("프로필 프리셋을 적용했습니다");
+    });
+  });
   sheet.querySelector("#sendFriendRequest")?.addEventListener("click", () => {
     const input = sheet.querySelector("#friendSearch");
     const name = input.value.trim() || "새 친구";
@@ -165,20 +345,45 @@ function closeSheet() {
   document.querySelector("#fab").classList.remove("open");
 }
 
+function applyAvatarPreset() {
+  const preset = currentAvatarPreset();
+  const art = document.querySelector("#profileAvatar");
+  art.setAttribute("style", presetStyle(preset));
+  art.setAttribute("aria-label", `${preset.name} 캐릭터 프리셋`);
+}
+
 function renderHome() {
   const matchScore = calculateMatchScore(average(Object.values(commonRatings)), average([6.7]));
+  const positionKey = representativePosition();
+  const position = positionLabels[positionKey];
+  const profile = playType(positionKey, tendencies);
   document.querySelector("#homeOvr").textContent = toOvr(matchScore);
-  renderRadar(document.querySelector("#homeRadar"), radarStats(commonRatings));
+  document.querySelector("#homePositionBadge").textContent = position[1];
+  document.querySelector("#homePosition").textContent = `${position[0]} · ${position[1]}`;
+  const identity = document.querySelector("#playIdentity");
+  if (profile) {
+    identity.classList.remove("pending");
+    document.querySelector("#homePlayType").textContent = profile.primary.name;
+    document.querySelector("#homePlayTypeSub").textContent = profile.primary.sub;
+    const changeWords = ["상승 중", "강화"];
+    document.querySelector("#homeSupportTags").innerHTML = profile.support.map((type, index) => `<span>${type.name} <em>${changeWords[index]}</em></span>`).join("");
+  } else {
+    identity.classList.add("pending");
+    document.querySelector("#homePlayType").textContent = "플레이유형 분석 준비중";
+    document.querySelector("#homePlayTypeSub").textContent = "선택 평가가 더 쌓이면 표시됩니다.";
+    document.querySelector("#homeSupportTags").innerHTML = "";
+  }
+  applyAvatarPreset();
+  renderRadar(document.querySelector("#homeRadar"), radarStats(commonRatings), 320);
   const rows = [
-    ["W", "용산 토요 풋살", "2026.05.18 (월) · 용산 더베이스", 76],
-    ["W", "망원 수요 풋살", "2026.05.15 (금) · 망원 풋살장", 74],
-    ["D", "상암 일요 풋살", "2026.05.12 (화) · 상암 풋살장", 72],
+    ["용산 토요 풋살", "2026.05.18 (월)", 76],
+    ["망원 수요 풋살", "2026.05.15 (금)", 74],
+    ["상암 일요 풋살", "2026.05.12 (화)", 72],
   ];
-  document.querySelector("#recentMatches").innerHTML = rows.map(([result, title, meta, ovr]) => `
+  document.querySelector("#recentMatches").innerHTML = rows.map(([title, meta, ovr]) => `
     <button class="recent-row" data-toast="경기 카드 상세를 열었습니다" type="button">
-      <span class="result-dot ${result === "D" ? "draw" : ""}">${result}</span>
       <div><h3>${title}</h3><p>${meta}</p></div>
-      <strong>OVR ${ovr} ›</strong>
+      <strong>OVR ${ovr}</strong>
     </button>
   `).join("");
 }
@@ -258,10 +463,9 @@ function actions(prevLabel = "이전", nextLabel = "다음") {
 
 function renderCards() {
   renderRadar(document.querySelector("#cardRadar"), radarStats(commonRatings), 280);
-  const positionNames = { attack: ["공격", "ST"], cam: ["공미", "CAM"], cdm: ["수미", "CDM"], defense: ["수비", "CB"], free: ["프리롤", "FR"] };
   document.querySelector("#positionGrid").innerHTML = Object.entries(positionRatings).map(([key, value]) => {
     const score = value === null ? "-" : toOvr(value);
-    return `<button class="position-card" data-toast="${positionNames[key][0]} 적응도 상세를 열었습니다" type="button"><span>${positionNames[key][0]} · ${positionNames[key][1]}</span><strong>${score}</strong><progress max="100" value="${value === null ? 0 : score}"></progress></button>`;
+    return `<button class="position-card" data-toast="${positionLabels[key][0]} 적응도 상세를 열었습니다" type="button"><span>${positionLabels[key][0]} · ${positionLabels[key][1]}</span><strong>${score}</strong><progress max="100" value="${value === null ? 0 : score}"></progress></button>`;
   }).join("");
   document.querySelector("#styleTags").innerHTML = ["창의형 플레이메이커", "템포 조율형", "안정 연결형", "공간 침투형", "직선 돌파형"].map((tag) => `<span>${tag}</span>`).join("");
   document.querySelector("#quotes").innerHTML = [
@@ -304,10 +508,21 @@ function bindInteractions() {
     openSheet("fab");
   });
   document.querySelector("#friendRequestOpen").addEventListener("click", () => openSheet("friend"));
-  document.querySelector("#homePlayerCard").addEventListener("click", () => {
+  document.querySelector("#avatarPicker").addEventListener("click", (event) => {
+    event.stopPropagation();
+    openSheet("avatar");
+  });
+  document.querySelector("#homePlayerCard").addEventListener("click", (event) => {
+    if (event.target.closest("#avatarPicker")) return;
     document.querySelector("#homePlayerCard").classList.add("expanded");
     openSheet("card");
     setTimeout(() => document.querySelector("#homePlayerCard").classList.remove("expanded"), 700);
+  });
+  document.querySelector("#homePlayerCard").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openSheet("card");
+    }
   });
   document.querySelector("#officialCard").addEventListener("click", () => {
     document.querySelector("#officialCard").classList.add("expanded");

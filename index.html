@@ -22,31 +22,41 @@
           <button class="icon-button" data-toast="새 알림은 아직 없어요" type="button" aria-label="알림">⌁</button>
         </div>
 
-        <button class="player-card" id="homePlayerCard" type="button" aria-labelledby="profile-title">
-          <div class="avatar-card">
-            <div class="portrait" aria-hidden="true"><span>승현</span></div>
-            <strong>78</strong>
-            <small>OVR</small>
-            <span class="badge">CAM</span>
-          </div>
-          <div class="profile-copy">
-            <h2 id="profile-title">승현</h2>
-            <p class="pill">공미 · 프리롤</p>
-            <p class="muted">이번 달 평가 4경기</p>
-            <div class="ovr-line">
-              <span>OVR</span>
-              <strong id="homeOvr">78</strong>
-              <em class="rise">▲ 3</em>
+        <article class="player-card" id="homePlayerCard" role="button" tabindex="0" aria-labelledby="profile-title">
+          <div class="card-intro">
+            <button class="avatar-card" id="avatarPicker" type="button" aria-label="프로필 프리셋 선택">
+              <span class="profile-art" id="profileAvatar" role="img" aria-label="승현의 게임형 프로필 아바타"></span>
+              <span class="badge" id="homePositionBadge">FR</span>
+              <span class="edit-avatar">변경</span>
+            </button>
+            <div class="profile-copy">
+              <p class="card-kicker">MY PLAYER</p>
+              <h2 id="profile-title">승현</h2>
+              <div class="role-row"><small>포지션</small><strong id="homePosition">프리롤 · FR</strong></div>
+              <div class="play-identity" id="playIdentity">
+                <small>대표 플레이유형</small>
+                <strong id="homePlayType">연결형 플레이메이커</strong>
+                <span id="homePlayTypeSub">Link Playmaker</span>
+                <div class="support-tags" id="homeSupportTags"></div>
+              </div>
+              <div class="ovr-line">
+                <span>OVR</span>
+                <strong id="homeOvr">78</strong>
+                <em class="rise">▲ 3</em>
+              </div>
             </div>
-            <p class="position-shift">최근 포지션 변화: 프리롤 +7%</p>
           </div>
-          <div class="mini-radar" id="homeRadar" aria-label="핵심 능력치 레이더"></div>
-          <div class="card-metrics">
-            <div><small>최근 폼</small><strong>안정적</strong></div>
-            <div><small>성장 능력</small><strong class="green">패스 +2</strong></div>
-            <div><small>플레이 스타일</small><strong class="gold">창의형 플레이메이커</strong></div>
+          <div class="ability-head">
+            <strong>핵심 능력 분석</strong>
+            <span>최근 4경기 기준</span>
           </div>
-        </button>
+          <div class="home-radar" id="homeRadar" aria-label="활동성, 게임 센스, 패스, 볼 컨트롤, 움직임, 멘탈 능력 분석"></div>
+          <div class="growth-read">
+            <small>PLAY CHANGE</small>
+            <strong>연결 플레이 비율 증가</strong>
+            <p>압박 상황의 빠른 패스와 프리롤 움직임이 함께 늘었습니다.</p>
+          </div>
+        </article>
       </header>
 
       <section class="content-view active" data-view="home">
@@ -78,14 +88,18 @@
         <div class="recent-list" id="recentMatches"></div>
 
         <h2 class="section-title">이번 달 요약</h2>
-        <div class="growth-note">
-          최근 플레이가 패스 중심으로 바뀌고 있고, 수비 전환 참여도도 함께 올라왔어요.
-        </div>
-        <div class="summary-grid">
-          <article><small>최근 상승 능력치</small><strong class="green">침착성 +6</strong><p>압박 상황 처리 개선</p></article>
-          <article><small>플레이 성향 변화</small><strong>패스 중심 플레이 증가</strong><p>연결 선택 비율 +12%</p></article>
-          <article><small>수비 참여도</small><strong class="purple-text">프리롤 비율 증가</strong><p>28% → 35%</p></article>
-        </div>
+        <article class="coach-report">
+          <div class="report-title">
+            <span>COACH REPORT</span>
+            <strong>안정적인 연결 역할로 성장 중</strong>
+          </div>
+          <p>최근엔 짧게 연결하는 플레이가 많아졌어요.</p>
+          <p>압박 상황에서도 패스를 선택하는 빈도가 늘었습니다.</p>
+          <p>무리한 돌파보다 안정적인 연결 플레이 비율이 증가했습니다.</p>
+          <div class="report-tags">
+            <span>패스 선택 증가</span><span>침착성 상승</span><span>프리롤 움직임</span>
+          </div>
+        </article>
       </section>
 
       <section class="content-view" data-view="evaluate">
