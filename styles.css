@@ -240,6 +240,20 @@ svg text { font-family: inherit; }
 .score-grid { grid-template-columns: repeat(5, 1fr); margin: 18px 0; }
 .score-button { text-align: center; padding: 10px 0; }
 .chip-grid { grid-template-columns: repeat(2, 1fr); }
+.rating-list { display: grid; gap: 8px; max-height: 430px; overflow-y: auto; padding-right: 2px; }
+.rating-row { display: grid; grid-template-columns: 1fr 58px; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.rating-row span, .chip small { display: block; }
+.rating-row strong { display: block; font-size: 13px; }
+.rating-row small { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.rating-row select { width: 58px; padding: 8px 5px; border: 1px solid var(--line); border-radius: 9px; background: #faf9ff; font-weight: 800; color: var(--purple); }
+.eval-subtitle { display: flex; justify-content: space-between; align-items: center; margin: 0 0 9px !important; font-size: 15px; }
+.eval-subtitle small { font-size: 11px; color: var(--muted); }
+.eval-subtitle.observation { margin-top: 17px !important; }
+.trait-grid .chip { padding: 10px; }
+.trait-grid .chip strong { display: block; font-size: 12px; margin-bottom: 4px; }
+.trait-grid .chip small { color: var(--muted); font-size: 10px; line-height: 1.3; font-weight: 500; }
+.highlight-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.chip.compact { padding: 10px 5px; text-align: center; font-size: 12px; }
 .eval-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
 .complete-card { text-align: center; padding: 24px 10px; }
 .checkmark { width: 74px; height: 74px; margin: 0 auto 14px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(145deg, var(--purple-2), var(--purple)); color: #fff; font-size: 34px; animation: pop .4s ease; }

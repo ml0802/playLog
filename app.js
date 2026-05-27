@@ -16,7 +16,9 @@ const tendencies = { teamwork: 8, aggression: 7, boldness: 7, creativity: 9, vis
 const tendencyEvaluationCount = 4;
 const positionLabels = {
   attack: ["공격", "ST"],
+  am: ["공미", "CAM"],
   cam: ["공미", "CAM"],
+  dm: ["수미", "CDM"],
   cdm: ["수미", "CDM"],
   defense: ["수비", "CB"],
   free: ["프리롤", "FR"],
@@ -65,6 +67,17 @@ const avatarSheets = {
   defense: "./assets/preset-defense.png",
   free: "./assets/preset-free.png",
 };
+const evaluationFields = window.PlaylogEngine.EVALUATION_FIELDS;
+const currentMatchId = "match:sangam-2026-05-23";
+const currentUserId = "user:seunghyun";
+const observedTraitScore = 8;
+const playerIds = {
+  "김민수": "user:minsu",
+  "이지훈": "user:jihoon",
+  "박현우": "user:hyunwoo",
+  "정우진": "user:woojin",
+  "최성민": "user:sungmin",
+};
 const matchAnalysis = {
   ovr: { previous: 75, current: 78 },
   statChanges: [
@@ -94,8 +107,8 @@ const matchAnalysis = {
 const players = ["김민수", "이지훈", "박현우", "정우진", "최성민"];
 const positions = [
   ["attack", "공격", "골문 앞에서 득점을 맡아요"],
-  ["cam", "공미", "공격 전개와 연결을 맡아요"],
-  ["cdm", "수미", "밸런스와 회수를 맡아요"],
+  ["am", "공미", "공격 전개와 연결을 맡아요"],
+  ["dm", "수미", "밸런스와 회수를 맡아요"],
   ["defense", "수비", "상대 공격을 막아요"],
   ["free", "프리롤", "정해진 역할보다 흐름을 만들어요"],
 ];
@@ -103,10 +116,13 @@ const flowSteps = ["선수 선택", "포지션 선택", "공통 필수 평가", 
 
 let currentStep = 0;
 let selectedPlayer = players[0];
-let selectedPosition = "cam";
-let commonScore = 7;
-let positionScore = 8;
-let selectedTraits = ["creativity", "vision"];
+let selectedPosition = "am";
+let commonScores = Object.fromEntries(evaluationFields.common.map((field) => [field.key, 6]));
+let positionScores = Object.fromEntries(evaluationFields.position[selectedPosition].map((field) => [field.key, 6]));
+let selectedTraits = [];
+let selectedHighlights = [];
+let overallComment = "";
+let lastGeneratedCard = null;
 let selectedAvatar = "free-1";
 let toastTimer;
 let friends = [
@@ -137,6 +153,53 @@ function radarStats(ratings) {
     ["움직임", ratings.off_the_ball * 0.75 + ratings.work_rate * 0.25],
     ["멘탈", ratings.composure * 0.7 + ratings.concentration * 0.3],
   ].map(([label, score]) => [label, Math.round(40 + score * 5.5)]);
+}
+
+function currentHomeStats() {
+  return window.PlaylogOfficialData?.playerCurrentStats
+    ?.find((stats) => stats && stats.userId === currentUserId) || null;
+}
+
+function playerCurrentRadarStats(stats) {
+  const labels = {
+    activity: "활동성",
+    gameSense: "게임 센스",
+    pass: "패스",
+    ballControl: "볼 컨트롤",
+    movement: "움직임",
+    mentality: "멘탈",
+  };
+  return Object.entries(labels).map(([key, label]) => [label, stats.radarData[key]]);
+}
+
+function currentPlayStyleCode(stats) {
+  return window.PlaylogOfficialData?.playerMatchCards
+    ?.filter((card) => card && card.userId === stats.userId && card.playStyle === stats.currentPlayStyle)
+    .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())[0]
+    ?.playStyleCode || "";
+}
+
+function recentHomeMatchCards() {
+  return (window.PlaylogOfficialData?.playerMatchCards || [])
+    .filter((card) => card && card.userId === currentUserId)
+    .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())
+    .slice(0, 3);
+}
+
+function matchTitle(card) {
+  const knownMatches = { "match:sangam-2026-05-23": "상암 목요일 풋살" };
+  return knownMatches[card.matchId] || card.matchId;
+}
+
+function matchDate(card) {
+  if (!card.generatedAt) return "";
+  const date = new Date(card.generatedAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join(".");
 }
 
 function representativePosition() {
@@ -353,15 +416,39 @@ function applyAvatarPreset() {
 }
 
 function renderHome() {
+  const stats = currentHomeStats();
   const matchScore = calculateMatchScore(average(Object.values(commonRatings)), average([6.7]));
-  const positionKey = representativePosition();
+  const positionKey = stats?.currentMainPosition || representativePosition();
   const position = positionLabels[positionKey];
-  const profile = playType(positionKey, tendencies);
-  document.querySelector("#homeOvr").textContent = toOvr(matchScore);
+  const profileKey = { am: "cam", dm: "cdm" }[positionKey] || positionKey;
+  const profile = playType(profileKey, tendencies);
+  const change = document.querySelector(".ovr-line .rise");
+  document.querySelector("#homeOvr").textContent = stats ? stats.currentOVR : toOvr(matchScore);
+  if (stats) {
+    change.hidden = !Number.isFinite(stats.ovrChange);
+    if (Number.isFinite(stats.ovrChange)) {
+      change.textContent = stats.ovrChange > 0 ? `▲ +${stats.ovrChange}` : stats.ovrChange < 0 ? `▼ ${stats.ovrChange}` : "- 0";
+    }
+  } else {
+    change.hidden = false;
+  }
   document.querySelector("#homePositionBadge").textContent = position[1];
   document.querySelector("#homePosition").textContent = `${position[0]} · ${position[1]}`;
   const identity = document.querySelector("#playIdentity");
-  if (profile) {
+  if (stats && stats.currentPlayStyle !== "분석 준비중") {
+    identity.classList.remove("pending");
+    document.querySelector("#homePlayType").textContent = stats.currentPlayStyle;
+    document.querySelector("#homePlayTypeSub").textContent = currentPlayStyleCode(stats);
+    const changeWords = ["상승 중", "강화"];
+    document.querySelector("#homeSupportTags").innerHTML = profile
+      ? profile.support.map((type, index) => `<span>${type.name} <em>${changeWords[index]}</em></span>`).join("")
+      : "";
+  } else if (stats) {
+    identity.classList.add("pending");
+    document.querySelector("#homePlayType").textContent = "분석 준비중";
+    document.querySelector("#homePlayTypeSub").textContent = "선택 평가가 더 쌓이면 표시됩니다.";
+    document.querySelector("#homeSupportTags").innerHTML = "";
+  } else if (profile) {
     identity.classList.remove("pending");
     document.querySelector("#homePlayType").textContent = profile.primary.name;
     document.querySelector("#homePlayTypeSub").textContent = profile.primary.sub;
@@ -374,18 +461,35 @@ function renderHome() {
     document.querySelector("#homeSupportTags").innerHTML = "";
   }
   applyAvatarPreset();
-  renderRadar(document.querySelector("#homeRadar"), radarStats(commonRatings), 320);
-  const rows = [
-    ["용산 토요 풋살", "2026.05.18 (월)", 76],
-    ["망원 수요 풋살", "2026.05.15 (금)", 74],
-    ["상암 일요 풋살", "2026.05.12 (화)", 72],
-  ];
-  document.querySelector("#recentMatches").innerHTML = rows.map(([title, meta, ovr]) => `
-    <button class="recent-row" data-toast="경기 카드 상세를 열었습니다" type="button">
-      <div><h3>${title}</h3><p>${meta}</p></div>
-      <strong>OVR ${ovr}</strong>
-    </button>
-  `).join("");
+  renderRadar(document.querySelector("#homeRadar"), stats ? playerCurrentRadarStats(stats) : radarStats(commonRatings), 320);
+  const recentCards = recentHomeMatchCards();
+  if (recentCards.length) {
+    document.querySelector("#recentMatches").innerHTML = recentCards.map((card) => {
+      const positionName = positionLabels[card.mainEvaluatedPosition]?.[0] || "-";
+      const meta = [matchDate(card), positionName, card.playStyle].filter(Boolean).join(" · ");
+      const changeText = Number.isFinite(card.overallChange)
+        ? ` ${card.overallChange > 0 ? "+" : ""}${card.overallChange}`
+        : "";
+      return `
+        <button class="recent-row" data-toast="경기 카드 상세를 열었습니다" type="button">
+          <div><h3>${matchTitle(card)}</h3><p>${meta}</p></div>
+          <strong>OVR ${card.overallRating}${changeText}</strong>
+        </button>
+      `;
+    }).join("");
+  } else {
+    const rows = [
+      ["용산 토요 풋살", "2026.05.18 (월)", 76],
+      ["망원 수요 풋살", "2026.05.15 (금)", 74],
+      ["상암 일요 풋살", "2026.05.12 (화)", 72],
+    ];
+    document.querySelector("#recentMatches").innerHTML = rows.map(([title, meta, ovr]) => `
+      <button class="recent-row" data-toast="경기 카드 상세를 열었습니다" type="button">
+        <div><h3>${title}</h3><p>${meta}</p></div>
+        <strong>OVR ${ovr}</strong>
+      </button>
+    `).join("");
+  }
 }
 
 function renderStepper() {
@@ -405,17 +509,26 @@ function renderEvaluation() {
     pane.innerHTML = `<div class="selector-grid">${players.map((player) => `<button class="choice-card ${player === selectedPlayer ? "selected" : ""}" data-player="${player}" type="button">${player}<br><small>평가하기</small></button>`).join("")}</div>${actions()}`;
   } else if (currentStep === 1) {
     pane.innerHTML = `<div class="selector-grid">${positions.map(([key, label, desc]) => `<button class="choice-card ${key === selectedPosition ? "selected" : ""}" data-position="${key}" type="button"><strong>${label}</strong><br><small>${desc}</small></button>`).join("")}</div>${actions()}`;
-  } else if (currentStep === 2 || currentStep === 3) {
-    const score = currentStep === 2 ? commonScore : positionScore;
-    pane.innerHTML = `<h3>${currentStep === 2 ? "활동량" : "경기 조율"}</h3><p class="muted">경기 내 움직임과 영향력을 1~10점으로 평가해주세요.</p><div class="score-grid">${Array.from({ length: 10 }, (_, index) => index + 1).map((value) => `<button class="score-button ${value === score ? "selected" : ""}" data-score="${value}" type="button">${value}</button>`).join("")}</div>${actions()}`;
+  } else if (currentStep === 2) {
+    pane.innerHTML = `<div class="rating-list">${renderRatingFields(evaluationFields.common, "common", commonScores)}</div>${actions()}`;
+  } else if (currentStep === 3) {
+    pane.innerHTML = `<div class="rating-list">${renderRatingFields(evaluationFields.position[selectedPosition], "position", positionScores)}</div>${actions()}`;
   } else if (currentStep === 4) {
-    const labels = [["teamwork", "팀플레이"], ["aggression", "적극성"], ["boldness", "대담성"], ["creativity", "창의성"], ["vision", "시야"], ["leadership", "리더십"], ["pass_sense", "패스 센스"], ["ball_control", "볼 컨트롤"]];
-    pane.innerHTML = `<div class="chip-grid">${labels.map(([key, label]) => `<button class="chip ${selectedTraits.includes(key) ? "selected" : ""}" data-trait="${key}" type="button">${label}</button>`).join("")}</div>${actions("건너뛰기")}`;
+    pane.innerHTML = `
+      <h3 class="eval-subtitle">플레이 성향 <small>선택 입력</small></h3>
+      <div class="chip-grid trait-grid">${evaluationFields.traits.map((field) => `<button class="chip ${selectedTraits.includes(field.key) ? "selected" : ""}" data-trait="${field.key}" type="button"><strong>${field.label}</strong><small>${field.description}</small></button>`).join("")}</div>
+      <h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3>
+      <div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${selectedHighlights.includes(field.key) ? "selected" : ""}" data-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>
+      ${actions("건너뛰기")}`;
   } else if (currentStep === 5) {
-    const matchOvr = toOvr(calculateMatchScore(commonScore, positionScore));
-    pane.innerHTML = `<label>이 선수 한 줄 평<textarea rows="4">넓은 시야와 정교한 패스로 경기 흐름을 바꾸는 플레이어.</textarea></label><div class="self-result"><span>${selectedPlayer} 예상 OVR</span><strong>${matchOvr}</strong></div>${actions("이전", "완료하고 다음 선수")}`;
+    const previewCard = window.PlaylogEngine.generatePlayerMatchCard({
+      matchId: currentMatchId,
+      userId: playerIds[selectedPlayer],
+      evaluations: [buildEvaluation("evaluation:preview")],
+    });
+    pane.innerHTML = `<label>이 선수 한 줄 평<textarea id="evaluationComment" rows="4" placeholder="오늘 경기에서 보인 특징을 남겨주세요.">${overallComment}</textarea></label><div class="self-result"><span>${selectedPlayer} 예상 OVR</span><strong>${previewCard.overallRating}</strong></div>${actions("이전", "평가 저장 완료")}`;
   } else {
-    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>평가 저장 완료!</h2><p>오늘의 플레이 성향은 패스 중심 · 안정 연결형으로 수집 중입니다.</p><div class="self-result"><span>예상 OVR 변화</span><strong>+2</strong></div><button class="primary full" data-go="cards" type="button">결과 카드 미리보기</button></div>`;
+    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>평가 저장 완료!</h2><p>동료 평가 원본이 공식 카드 생성 데이터에 저장되었습니다.</p><div class="self-result"><span>${selectedPlayer} 생성 OVR</span><strong>${lastGeneratedCard?.overallRating || "-"}</strong></div><button class="primary full" data-go="cards" type="button">결과 카드 미리보기</button></div>`;
     pane.querySelector("[data-go]")?.addEventListener("click", () => setView("cards"));
     return;
   }
@@ -427,27 +540,44 @@ function renderEvaluation() {
   }));
   pane.querySelectorAll("[data-position]").forEach((button) => button.addEventListener("click", () => {
     selectedPosition = button.dataset.position;
+    positionScores = Object.fromEntries(evaluationFields.position[selectedPosition].map((field) => [field.key, 6]));
     showToast(`${button.querySelector("strong").textContent} 역할로 저장`);
     renderEvaluation();
   }));
-  pane.querySelectorAll("[data-score]").forEach((button) => button.addEventListener("click", () => {
-    if (currentStep === 2) commonScore = Number(button.dataset.score);
-    if (currentStep === 3) positionScore = Number(button.dataset.score);
-    showToast(`${button.dataset.score}점 저장됨`);
-    renderEvaluation();
+  pane.querySelectorAll("[data-rating-key]").forEach((select) => select.addEventListener("change", () => {
+    const store = select.dataset.ratingCategory === "common" ? commonScores : positionScores;
+    store[select.dataset.ratingKey] = Number(select.value);
+    showToast(`${select.dataset.ratingLabel} ${select.value}점 저장됨`);
   }));
   pane.querySelectorAll("[data-trait]").forEach((button) => button.addEventListener("click", () => {
     const key = button.dataset.trait;
-    selectedTraits = selectedTraits.includes(key) ? selectedTraits.filter((item) => item !== key) : [...selectedTraits, key].slice(-2);
-    showToast("눈에 띈 특징을 반영했어요");
+    selectedTraits = selectedTraits.includes(key) ? selectedTraits.filter((item) => item !== key) : [...selectedTraits, key];
+    showToast("플레이 성향 선택을 반영했어요");
     renderEvaluation();
   }));
+  pane.querySelectorAll("[data-highlight]").forEach((button) => button.addEventListener("click", () => {
+    const key = button.dataset.highlight;
+    if (!selectedHighlights.includes(key) && selectedHighlights.length >= 2) {
+      showToast("추가 관찰 능력치는 최대 2개까지 선택할 수 있어요");
+      return;
+    }
+    selectedHighlights = selectedHighlights.includes(key)
+      ? selectedHighlights.filter((item) => item !== key)
+      : [...selectedHighlights, key];
+    showToast("추가 관찰 능력치를 반영했어요");
+    renderEvaluation();
+  }));
+  pane.querySelector("#evaluationComment")?.addEventListener("input", (event) => {
+    overallComment = event.target.value;
+  });
   pane.querySelector("[data-prev]")?.addEventListener("click", () => {
     currentStep = Math.max(0, currentStep - 1);
     renderEvaluation();
   });
   pane.querySelector("[data-next]")?.addEventListener("click", () => {
     if (currentStep === flowSteps.length - 1) {
+      const evaluation = buildEvaluation(`evaluation:ui:${Date.now()}`);
+      lastGeneratedCard = window.PlaylogOfficialData.saveEvaluation(evaluation);
       showToast("평가가 자동 저장되었습니다");
       currentStep = 6;
     } else {
@@ -457,16 +587,56 @@ function renderEvaluation() {
   });
 }
 
+function renderRatingFields(fields, category, ratings) {
+  return fields.map((field) => `
+    <label class="rating-row">
+      <span><strong>${field.label}</strong><small>${field.description}</small></span>
+      <select data-rating-category="${category}" data-rating-key="${field.key}" data-rating-label="${field.label}" aria-label="${field.label} 평가">
+        ${Array.from({ length: 10 }, (_, index) => index + 1).map((value) => `<option value="${value}" ${value === ratings[field.key] ? "selected" : ""}>${value}</option>`).join("")}
+      </select>
+    </label>
+  `).join("");
+}
+
+function buildEvaluation(id) {
+  return {
+    id,
+    matchId: currentMatchId,
+    evaluatorUserId: currentUserId,
+    targetUserId: playerIds[selectedPlayer],
+    selectedPosition,
+    overallComment: overallComment.trim(),
+    createdAt: new Date().toISOString(),
+    version: 1,
+    isActive: true,
+    updatedAt: new Date().toISOString(),
+    scores: [
+      ...evaluationFields.common.map((field) => ({ id: `${id}:common:${field.key}`, evaluationId: id, category: "common", key: field.key, score: commonScores[field.key] })),
+      ...evaluationFields.position[selectedPosition].map((field) => ({ id: `${id}:position:${field.key}`, evaluationId: id, category: "position", key: field.key, score: positionScores[field.key] })),
+    ],
+    traits: selectedTraits.map((key) => ({ id: `${id}:trait:${key}`, evaluationId: id, key, score: observedTraitScore })),
+    highlights: selectedHighlights.slice(0, 2).map((key) => ({ id: `${id}:highlight:${key}`, evaluationId: id, key })),
+  };
+}
+
 function actions(prevLabel = "이전", nextLabel = "다음") {
   return `<div class="eval-actions"><button class="secondary" data-prev type="button">${prevLabel}</button><button class="primary" data-next type="button">${nextLabel}</button></div>`;
 }
 
 function renderCards() {
+  const stats = currentHomeStats();
   renderRadar(document.querySelector("#cardRadar"), radarStats(commonRatings), 280);
-  document.querySelector("#positionGrid").innerHTML = Object.entries(positionRatings).map(([key, value]) => {
-    const score = value === null ? "-" : toOvr(value);
-    return `<button class="position-card" data-toast="${positionLabels[key][0]} 적응도 상세를 열었습니다" type="button"><span>${positionLabels[key][0]} · ${positionLabels[key][1]}</span><strong>${score}</strong><progress max="100" value="${value === null ? 0 : score}"></progress></button>`;
-  }).join("");
+  if (stats) {
+    document.querySelector("#positionGrid").innerHTML = Object.entries(stats.positionAdaptation)
+      .filter(([, value]) => value !== null)
+      .map(([key, value]) => `<button class="position-card" data-toast="${positionLabels[key][0]} 적응도 상세를 열었습니다" type="button"><span>${positionLabels[key][0]} · ${positionLabels[key][1]}</span><strong>${value.adaptationRating}</strong><progress max="100" value="${value.adaptationRating}"></progress></button>`)
+      .join("");
+  } else {
+    document.querySelector("#positionGrid").innerHTML = Object.entries(positionRatings).map(([key, value]) => {
+      const score = value === null ? "-" : toOvr(value);
+      return `<button class="position-card" data-toast="${positionLabels[key][0]} 적응도 상세를 열었습니다" type="button"><span>${positionLabels[key][0]} · ${positionLabels[key][1]}</span><strong>${score}</strong><progress max="100" value="${value === null ? 0 : score}"></progress></button>`;
+    }).join("");
+  }
   document.querySelector("#styleTags").innerHTML = ["창의형 플레이메이커", "템포 조율형", "안정 연결형", "공간 침투형", "직선 돌파형"].map((tag) => `<span>${tag}</span>`).join("");
   document.querySelector("#quotes").innerHTML = [
     ["넓은 시야와 정교한 패스로 경기 흐름을 바꿨어요.", 4],
