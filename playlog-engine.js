@@ -23,6 +23,7 @@
    *   playStyle:string, playStyleCode:string|null, radarData:Object,
    *   radarChange:Object|null, positionAdaptation:Object,
    *   strengthsTop3:Object[], weaknessesTop3:Object[], matchAnalysisText:string,
+   *   analysisScores:Object[], analysisChanges:Object[],
    *   reliabilityLevel:"low"|"medium"|"normal"|"high", evaluatorCount:number,
    *   generatedAt:string
    * }} PlayerMatchCard
@@ -33,6 +34,13 @@
    *   positionAdaptation:Object, reliabilityLevel:"low"|"medium"|"normal"|"high",
    *   recentMatchCount:number, generatedAt:string
    * }} PlayerCurrentStats
+   * @typedef {{
+   *   userId:string, monthKey:string, monthlyOVR:number,
+   *   previousMonthlyOVR:number|null, monthlyOVRChange:number|null,
+   *   radarData:Object, mainPlayStyle:string, mainPosition:EvaluatedPosition|null,
+   *   positionAdaptation:Object, matchCount:number,
+   *   strengthsSummary:Object[], weaknessesSummary:Object[], generatedAt:string
+   * }} PlayerMonthlyCard
    */
 
   const POSITIONS = ["attack", "am", "dm", "defense", "free"];
@@ -322,16 +330,20 @@
   }
 
   function rankedAnalysisItems(scores, direction, limit, context = {}) {
-    const items = Object.entries(averagesByKey(scores)).map(([key, score]) => ({
+    const items = analysisScoreItems(scores);
+    return items.sort((left, right) => {
+      const scoreDifference = direction === "high" ? right.score - left.score : left.score - right.score;
+      return scoreDifference || compareAnalysisTie(left, right, context);
+    }).slice(0, limit);
+  }
+
+  function analysisScoreItems(scores) {
+    return Object.entries(averagesByKey(scores)).map(([key, score]) => ({
       key,
       label: LABELS[key] || key,
       score,
       category: COMMON_KEYS.includes(key) ? "common" : "position",
     }));
-    return items.sort((left, right) => {
-      const scoreDifference = direction === "high" ? right.score - left.score : left.score - right.score;
-      return scoreDifference || compareAnalysisTie(left, right, context);
-    }).slice(0, limit);
   }
 
   function withParticle(text, consonantParticle, vowelParticle) {
@@ -340,17 +352,64 @@
     return `${text}${hasBatchim ? consonantParticle : vowelParticle}`;
   }
 
+  function formatAnalysisLabels(items) {
+    const labels = items.map((item) => item.label);
+    if (labels.length < 2) return labels[0];
+    const finalLabel = labels.pop();
+    return `${labels.slice(0, -1).join(", ")}${labels.length > 1 ? ", " : ""}${withParticle(labels.at(-1), "과", "와")} ${finalLabel}`;
+  }
+
   function generateMatchAnalysis(scores, context = {}) {
     const strengthsTop3 = rankedAnalysisItems(scores, "high", 3, context);
     const weaknessesTop3 = rankedAnalysisItems(scores, "low", 3, context);
-    const strengthPair = strengthsTop3.slice(0, 2).map((item) => item.label);
-    const weaknessPair = weaknessesTop3.slice(0, 2).map((item) => item.label);
-    const strengthLabels = strengthPair.length > 1 ? `${withParticle(strengthPair[0], "과", "와")} ${strengthPair[1]}` : strengthPair[0];
-    const weaknessLabels = weaknessPair.length > 1 ? `${withParticle(weaknessPair[0], "과", "와")} ${weaknessPair[1]}` : weaknessPair[0];
+    const strengthLabels = formatAnalysisLabels(strengthsTop3);
+    const weaknessLabels = formatAnalysisLabels(weaknessesTop3);
     const messages = [];
     if (strengthLabels) messages.push(`${strengthLabels}에서 좋은 평가를 받았습니다.`);
     if (weaknessLabels) messages.push(`${withParticle(weaknessLabels, "은", "는")} 다음 경기에서 보완할 여지가 있습니다.`);
     return { strengthsTop3, weaknessesTop3, matchAnalysisText: messages.join(" ") };
+  }
+
+  function calculateAnalysisChanges(latestCard, previousCards, minimumDifference = 2) {
+    const comparisonCards = (previousCards || [])
+      .filter((card) => card
+        && card.userId === latestCard.userId
+        && card.id !== latestCard.id
+        && card.matchId !== latestCard.matchId)
+      .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())
+      .slice(0, 3);
+    if (!comparisonCards.length || !Array.isArray(latestCard.analysisScores)) return [];
+
+    const previousScores = comparisonCards.map((card) =>
+      Object.fromEntries((card.analysisScores || []).map((item) => [item.key, item.score])),
+    );
+    const context = {
+      mainEvaluatedPosition: latestCard.mainEvaluatedPosition,
+      playStyle: latestCard.playStyle,
+    };
+    return latestCard.analysisScores
+      .flatMap((item) => {
+        const scores = previousScores.map((snapshot) => snapshot[item.key]).filter((score) => Number.isFinite(score));
+        if (!scores.length) return [];
+        const previousRecentAverage = round(average(scores));
+        const diff = round(item.score - previousRecentAverage);
+        if (Math.abs(diff) < minimumDifference) return [];
+        return [{
+          key: item.key,
+          label: item.label,
+          category: item.category,
+          currentScore: item.score,
+          previousRecentAverage,
+          diff,
+          comparisonMatchCount: scores.length,
+        }];
+      })
+      .sort((left, right) => {
+        const directionDifference = (left.diff < 0 ? 1 : 0) - (right.diff < 0 ? 1 : 0);
+        if (directionDifference) return directionDifference;
+        const diffOrder = left.diff > 0 ? right.diff - left.diff : left.diff - right.diff;
+        return diffOrder || compareAnalysisTie(left, right, context);
+      });
   }
 
   function calculateRadarChange(radarData, previousRadarData) {
@@ -470,7 +529,93 @@
     };
   }
 
-  function generatePlayerMatchCard({ matchId, userId, evaluations, previousCard = null, generatedAt = new Date().toISOString() }) {
+  function monthlyCardsForUser(userId, monthKey, cards) {
+    return cards
+      .filter((card) => card
+        && card.userId === userId
+        && typeof card.generatedAt === "string"
+        && card.generatedAt.slice(0, 7) === monthKey)
+      .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime());
+  }
+
+  function calculateMonthlyRadarAverage(cards) {
+    const radarKeys = new Set(cards.flatMap((card) => Object.keys(card.radarData || {})));
+    return Object.fromEntries([...radarKeys].map((key) => {
+      const value = average(cards.map((card) => card.radarData?.[key]));
+      return [key, Number.isFinite(value) ? Math.round(value) : null];
+    }));
+  }
+
+  function monthlyMode(cards, selector, fallback) {
+    const valid = cards.filter((card) => selector(card) && selector(card) !== "분석 준비중");
+    if (!valid.length) return fallback;
+    const counts = valid.reduce((summary, card) => {
+      const value = selector(card);
+      summary[value] = (summary[value] || 0) + 1;
+      return summary;
+    }, {});
+    const maximum = Math.max(...Object.values(counts));
+    return selector(valid.find((card) => counts[selector(card)] === maximum));
+  }
+
+  function calculateMonthlyPositionAdaptation(cards) {
+    return POSITIONS.reduce((adaptation, position) => {
+      const available = cards.map((card) => card.positionAdaptation?.[position]).filter(Boolean);
+      if (!available.length) {
+        adaptation[position] = null;
+        return adaptation;
+      }
+      const positionAverage = average(available.map((item) => item.positionAverage));
+      const adaptationRating = average(available.map((item) => item.adaptationRating));
+      adaptation[position] = {
+        positionAverage: Number.isFinite(positionAverage) ? round(positionAverage) : null,
+        adaptationRating: Number.isFinite(adaptationRating) ? Math.round(adaptationRating) : null,
+        matchCount: available.length,
+      };
+      return adaptation;
+    }, {});
+  }
+
+  function calculateMonthlySummary(cards, key) {
+    const entries = cards.flatMap((card) => card[key] || []);
+    const counted = entries.reduce((summary, item) => {
+      if (!summary[item.key]) {
+        summary[item.key] = { key: item.key, label: item.label || LABELS[item.key] || item.key, count: 0 };
+      }
+      summary[item.key].count += 1;
+      return summary;
+    }, {});
+    const recentOrder = entries.reduce((order, item, index) => {
+      if (!(item.key in order)) order[item.key] = index;
+      return order;
+    }, {});
+    return Object.values(counted)
+      .sort((left, right) => right.count - left.count || recentOrder[left.key] - recentOrder[right.key])
+      .slice(0, 3);
+  }
+
+  function generatePlayerMonthlyCard({ userId, monthKey, cards, previousMonthlyCard = null, generatedAt = new Date().toISOString() }) {
+    const monthlyCards = monthlyCardsForUser(userId, monthKey, cards);
+    if (!monthlyCards.length) return null;
+    const monthlyOVR = Math.round(average(monthlyCards.map((card) => card.overallRating)));
+    return {
+      userId,
+      monthKey,
+      monthlyOVR,
+      previousMonthlyOVR: previousMonthlyCard?.monthlyOVR ?? null,
+      monthlyOVRChange: previousMonthlyCard ? monthlyOVR - previousMonthlyCard.monthlyOVR : null,
+      radarData: calculateMonthlyRadarAverage(monthlyCards),
+      mainPlayStyle: monthlyMode(monthlyCards, (card) => card.playStyle, "분석 준비중"),
+      mainPosition: monthlyMode(monthlyCards, (card) => card.mainEvaluatedPosition, null),
+      positionAdaptation: calculateMonthlyPositionAdaptation(monthlyCards),
+      matchCount: monthlyCards.length,
+      strengthsSummary: calculateMonthlySummary(monthlyCards, "strengthsTop3"),
+      weaknessesSummary: calculateMonthlySummary(monthlyCards, "weaknessesTop3"),
+      generatedAt,
+    };
+  }
+
+  function generatePlayerMatchCard({ matchId, userId, evaluations, previousCard = null, previousCards = [], generatedAt = new Date().toISOString() }) {
     const peerEvaluations = evaluations.filter((evaluation) =>
       evaluation.matchId === matchId
       && evaluation.targetUserId === userId
@@ -493,7 +638,7 @@
       playStyle: style.playStyle,
     });
     const evaluatorCount = new Set(peerEvaluations.map((evaluation) => evaluation.evaluatorUserId)).size;
-    return {
+    const card = {
       id: `player-match-card:${matchId}:${userId}`,
       matchId,
       userId,
@@ -513,10 +658,12 @@
       strengthsTop3: analysis.strengthsTop3,
       weaknessesTop3: analysis.weaknessesTop3,
       matchAnalysisText: analysis.matchAnalysisText,
+      analysisScores: analysisScoreItems(scores),
       reliabilityLevel: calculateReliability(evaluatorCount),
       evaluatorCount,
       generatedAt,
     };
+    return { ...card, analysisChanges: calculateAnalysisChanges(card, previousCards) };
   }
 
   return {
@@ -535,11 +682,13 @@
     calculatePositionAdaptation,
     calculatePlayStyle,
     generateMatchAnalysis,
+    calculateAnalysisChanges,
     calculateWeightedRecentAverage,
     calculateRadarAverage,
     calculateCurrentPlayStyle,
     calculateCurrentMainPosition,
     generatePlayerCurrentStats,
+    generatePlayerMonthlyCard,
     generatePlayerMatchCard,
   };
 });

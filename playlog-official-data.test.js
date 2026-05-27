@@ -45,6 +45,10 @@ assert.equal(card.mainEvaluatedPosition, "am");
 assert.equal(card.playStyleCode !== null, true);
 assert.equal(store.playerMatchCards.some((item) => item.id === card.id), true);
 assert.equal(store.playerCurrentStats.some((item) => item.userId === card.userId), true);
+const initialMonthlyCard = store.playerMonthlyCards.find((item) => item.userId === card.userId && item.monthKey === "2026-05");
+assert.equal(initialMonthlyCard.matchCount, 1);
+assert.equal(initialMonthlyCard.previousMonthlyOVR, null);
+assert.equal(initialMonthlyCard.monthlyOVRChange, null);
 const firstStats = { ...store.playerCurrentStats.find((item) => item.userId === card.userId), radarData: { ...store.playerCurrentStats.find((item) => item.userId === card.userId).radarData } };
 assert.equal(firstStats.currentOVR, card.overallRating);
 assert.equal(firstStats.previousOVR, null);
@@ -71,6 +75,7 @@ assert.equal(nextStats.previousOVR, firstStats.currentOVR);
 assert.equal(nextStats.currentOVR, Math.round((card.overallRating + nextCard.overallRating) / 2));
 assert.equal(nextStats.ovrChange, nextStats.currentOVR - firstStats.currentOVR);
 assert.equal(nextStats.radarChange.activity, nextStats.radarData.activity - firstStats.radarData.activity);
+assert.equal(store.playerMonthlyCards.find((item) => item.userId === nextCard.userId && item.monthKey === "2026-05").matchCount, 2);
 
 const resubmission = {
   ...nextMatch,
@@ -98,5 +103,51 @@ assert.equal(currentStats.previousOVR, nextStats.currentOVR);
 assert.equal(currentStats.currentOVR, Math.round((card.overallRating + resubmittedCard.overallRating) / 2));
 assert.equal(currentStats.ovrChange, currentStats.currentOVR - nextStats.currentOVR);
 assert.equal(currentStats.radarChange.activity, currentStats.radarData.activity - nextStats.radarData.activity);
+
+const thirdMatch = {
+  ...evaluation,
+  id: `${evaluationId}:third-match`,
+  matchId: "match:ui-test-third",
+  createdAt: "2026-05-27T08:15:00.000Z",
+  updatedAt: "2026-05-27T08:15:00.000Z",
+  scores: evaluation.scores.map((score) => ({ ...score, evaluationId: `${evaluationId}:third-match`, score: 6 })),
+};
+const fourthMatch = {
+  ...evaluation,
+  id: `${evaluationId}:fourth-match`,
+  matchId: "match:ui-test-fourth",
+  createdAt: "2026-05-27T08:20:00.000Z",
+  updatedAt: "2026-05-27T08:20:00.000Z",
+  scores: evaluation.scores.map((score) => ({ ...score, evaluationId: `${evaluationId}:fourth-match`, score: 10 })),
+};
+store.saveEvaluation(thirdMatch);
+const fourthCard = store.saveEvaluation(fourthMatch);
+const stablePassChange = fourthCard.analysisChanges.find((item) => item.key === "stablePass");
+
+assert.ok(Array.isArray(fourthCard.analysisScores));
+assert.ok(Array.isArray(fourthCard.analysisChanges));
+assert.equal(stablePassChange.previousRecentAverage, 6.33);
+assert.equal(stablePassChange.currentScore, 10);
+assert.equal(stablePassChange.diff, 3.67);
+assert.equal(stablePassChange.comparisonMatchCount, 3);
+const monthlyCard = store.playerMonthlyCards.find((item) => item.userId === nextCard.userId && item.monthKey === "2026-05");
+assert.equal(monthlyCard.userId, nextCard.userId);
+assert.equal(monthlyCard.monthKey, "2026-05");
+assert.equal(monthlyCard.matchCount, 4);
+assert.ok(store.playerMonthlyCards.some((item) => item.userId === nextCard.userId && item.monthKey === "2026-05"));
+
+const juneMatch = {
+  ...evaluation,
+  id: `${evaluationId}:june-match`,
+  matchId: "match:ui-test-june",
+  createdAt: "2026-06-03T08:00:00.000Z",
+  updatedAt: "2026-06-03T08:00:00.000Z",
+  scores: evaluation.scores.map((score) => ({ ...score, evaluationId: `${evaluationId}:june-match`, score: 8 })),
+};
+const juneCard = store.saveEvaluation(juneMatch);
+const juneMonthlyCard = store.playerMonthlyCards.find((item) => item.userId === juneCard.userId && item.monthKey === "2026-06");
+assert.equal(juneMonthlyCard.matchCount, 1);
+assert.equal(juneMonthlyCard.previousMonthlyOVR, monthlyCard.monthlyOVR);
+assert.equal(juneMonthlyCard.monthlyOVRChange, juneMonthlyCard.monthlyOVR - monthlyCard.monthlyOVR);
 
 console.log("playlog-official-data tests passed");

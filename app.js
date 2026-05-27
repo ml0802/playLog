@@ -68,8 +68,8 @@ const avatarSheets = {
   free: "./assets/preset-free.png",
 };
 const evaluationFields = window.PlaylogEngine.EVALUATION_FIELDS;
-const currentMatchId = "match:sangam-2026-05-23";
 const currentUserId = "user:seunghyun";
+const currentMatchId = window.PlaylogOfficialData?.activeEvaluationMatchId || "match:sangam-2026-05-23";
 const observedTraitScore = 8;
 const playerIds = {
   "김민수": "user:minsu",
@@ -77,6 +77,10 @@ const playerIds = {
   "박현우": "user:hyunwoo",
   "정우진": "user:woojin",
   "최성민": "user:sungmin",
+};
+const userNames = {
+  [currentUserId]: "승현",
+  ...Object.fromEntries(Object.entries(playerIds).map(([name, id]) => [id, name])),
 };
 const matchAnalysis = {
   ovr: { previous: 75, current: 78 },
@@ -104,7 +108,7 @@ const matchAnalysis = {
     },
   ],
 };
-const players = ["김민수", "이지훈", "박현우", "정우진", "최성민"];
+const fallbackPlayers = ["김민수", "이지훈", "박현우", "정우진", "최성민"];
 const positions = [
   ["attack", "공격", "골문 앞에서 득점을 맡아요"],
   ["am", "공미", "공격 전개와 연결을 맡아요"],
@@ -112,10 +116,11 @@ const positions = [
   ["defense", "수비", "상대 공격을 막아요"],
   ["free", "프리롤", "정해진 역할보다 흐름을 만들어요"],
 ];
-const flowSteps = ["선수 선택", "포지션 선택", "공통 필수 평가", "포지션 특화 평가", "선택 평가", "한 줄 평"];
+const flowSteps = ["선수 선택", "포지션 선택", "공통 필수 평가", "포지션 특화 평가", "선택 평가", "한 줄 평", "경기 투표"];
+const reflectionSteps = ["포지션 선택", "공통 자가평가", "포지션 자가평가", "성향과 특징", "개인 회고"];
 
 let currentStep = 0;
-let selectedPlayer = players[0];
+let selectedPlayer = fallbackPlayers[0];
 let selectedPosition = "am";
 let commonScores = Object.fromEntries(evaluationFields.common.map((field) => [field.key, 6]));
 let positionScores = Object.fromEntries(evaluationFields.position[selectedPosition].map((field) => [field.key, 6]));
@@ -123,8 +128,86 @@ let selectedTraits = [];
 let selectedHighlights = [];
 let overallComment = "";
 let lastGeneratedCard = null;
+let selectedPOMTargetId = null;
+let selectedNextStarTargetId = null;
+let reflectionStep = 0;
+let reflectionMatchId = null;
+let reflectionPosition = "free";
+let reflectionCommonScores = Object.fromEntries(evaluationFields.common.map((field) => [field.key, 6]));
+let reflectionPositionScores = Object.fromEntries(evaluationFields.position.free.map((field) => [field.key, 6]));
+let reflectionTraits = [];
+let reflectionHighlights = [];
+let satisfactionScore = 7;
+let feltStrength = "";
+let feltWeakness = "";
+let reflectionGoal = "";
+let reflectionMemo = "";
 let selectedAvatar = "free-1";
 let toastTimer;
+
+function activeMatchRecord() {
+  return window.PlaylogOfficialData?.matches?.find((match) => match.id === currentMatchId) || null;
+}
+
+function evaluationTargetPlayers() {
+  const targets = window.PlaylogOfficialData?.getEvaluationTargets?.(currentMatchId, currentUserId);
+  if (!targets?.length) {
+    return fallbackPlayers.map((name) => ({ name, userId: playerIds[name] }));
+  }
+  return targets.map((participant) => ({
+    name: userNames[participant.userId] || participant.userId,
+    userId: participant.userId,
+  }));
+}
+
+function selectedPlayerId() {
+  return evaluationTargetPlayers().find((player) => player.name === selectedPlayer)?.userId
+    || playerIds[selectedPlayer];
+}
+
+function matchDisplayMeta(match) {
+  const date = new Date(match.date);
+  const dateText = Number.isNaN(date.getTime())
+    ? match.date
+    : `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return `${dateText} · ${match.location}`;
+}
+
+function renderActiveMatchProgress() {
+  const match = activeMatchRecord();
+  const progress = window.PlaylogOfficialData?.getEvaluationProgress?.(currentMatchId);
+  if (!match || !progress) return;
+  const waiting = window.PlaylogOfficialData.getPublishWaitingStatus?.(currentMatchId);
+  const pomResult = match.status === "published"
+    ? window.PlaylogOfficialData.calculateMatchAward?.(currentMatchId, "pom")
+    : null;
+  const nextStarResult = match.status === "published"
+    ? window.PlaylogOfficialData.calculateMatchAward?.(currentMatchId, "next_star")
+    : null;
+  const progressPercent = progress.totalCount ? Math.round((progress.completedCount / progress.totalCount) * 100) : 0;
+  document.querySelector("#activeMatchStatus").textContent = match.status === "published" ? "공개 완료" : "수집 중";
+  document.querySelector("#activeMatchTitle").textContent = match.title;
+  document.querySelector("#activeMatchMeta").textContent = matchDisplayMeta(match);
+  const waitingElement = document.querySelector("#activeMatchWaiting");
+  waitingElement.hidden = !waiting;
+  if (waiting) {
+    waitingElement.textContent = pomResult?.winnerUserIds?.length || nextStarResult?.winnerUserIds?.length
+      ? [
+        pomResult?.winnerUserIds?.length ? `POM: ${pomResult.winnerUserIds.map((id) => userNames[id] || id).join(" · ")}` : null,
+        nextStarResult?.winnerUserIds?.length ? `NEXT STAR: ${nextStarResult.winnerUserIds.map((id) => userNames[id] || id).join(" · ")}` : null,
+      ].filter(Boolean).join(" / ")
+      : waiting.label;
+  }
+  document.querySelector("#activeMatchFaces").setAttribute("aria-label", `참가자 ${progress.totalCount}명 중 ${progress.completedCount}명 완료`);
+  document.querySelector("#activeMatchFaces").innerHTML = match.participants.map((participant) => {
+    const initial = (userNames[participant.userId] || "?").slice(0, 1);
+    return participant.evaluationCompleted ? `<span>${initial}</span>` : "<i></i>";
+  }).join("");
+  document.querySelector("#activeMatchProgress").setAttribute("style", `--progress: ${progressPercent}`);
+  document.querySelector("#activeMatchProgressValue").textContent = `${progress.completedCount}/${progress.totalCount}`;
+  document.querySelector("#activeMatchProgressLabel").textContent = match.status === "published" ? "공개" : "완료";
+  document.querySelector("#activeMatchAction").textContent = match.status === "published" ? "결과 보기 ›" : "이어서 평가하기 ›";
+}
 let friends = [
   ["김민수", "OVR +3 · 창의형 플레이메이커"],
   ["박현우", "최근 상승세 · 수비 참여도 +2"],
@@ -160,6 +243,12 @@ function currentHomeStats() {
     ?.find((stats) => stats && stats.userId === currentUserId) || null;
 }
 
+function latestHomeMonthlyCard() {
+  return (window.PlaylogOfficialData?.playerMonthlyCards || [])
+    .filter((card) => card && card.userId === currentUserId)
+    .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
+}
+
 function playerCurrentRadarStats(stats) {
   const labels = {
     activity: "활동성",
@@ -184,6 +273,18 @@ function recentHomeMatchCards() {
     .filter((card) => card && card.userId === currentUserId)
     .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())
     .slice(0, 3);
+}
+
+function latestHomeAnalysisCard() {
+  const card = (window.PlaylogOfficialData?.playerMatchCards || [])
+    .filter((item) => item && item.userId === currentUserId)
+    .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())[0];
+  return card
+    && Array.isArray(card.strengthsTop3)
+    && Array.isArray(card.weaknessesTop3)
+    && card.matchAnalysisText
+    ? card
+    : null;
 }
 
 function matchTitle(card) {
@@ -263,6 +364,93 @@ function renderResultStats(direction) {
     .join("");
 }
 
+function analysisItemLabel(item) {
+  if (item.label) return item.label;
+  const fields = [
+    ...evaluationFields.common,
+    ...Object.values(evaluationFields.position).flat(),
+  ];
+  return fields.find((field) => field.key === item.key)?.label || item.key;
+}
+
+function renderOfficialResultStats(items, direction) {
+  return items.slice(0, 3)
+    .map((item, index) => {
+      const score = Number(item.score);
+      const width = Number.isFinite(score) ? Math.max(18, Math.min(100, Math.round(score * 10))) : 0;
+      const displayScore = Number.isFinite(score) ? String(Math.round(score * 10) / 10) : "-";
+      return `<div class="result-stat ${direction}"><b>${index + 1}</b><small>${analysisItemLabel(item)}</small><i aria-hidden="true"><span style="width:${width}%"></span></i><strong>${displayScore}</strong></div>`;
+    })
+    .join("");
+}
+
+function splitAnalysisChanges(changes) {
+  const available = Array.isArray(changes) ? changes.filter((change) => Number.isFinite(change.diff)) : [];
+  return {
+    rising: available.filter((change) => change.diff > 0).sort((left, right) => right.diff - left.diff).slice(0, 3),
+    falling: available.filter((change) => change.diff < 0).sort((left, right) => left.diff - right.diff).slice(0, 3),
+  };
+}
+
+function renderAnalysisChanges(items, direction) {
+  return items.map((change, index) => {
+    const width = Math.max(34, Math.min(100, Math.round(Math.abs(change.diff) / 3 * 100)));
+    const displayDiff = `${change.diff > 0 ? "+" : ""}${change.diff}`;
+    return `<div class="result-stat ${direction}"><b>${index + 1}</b><small>${analysisItemLabel(change)}</small><i aria-hidden="true"><span style="width:${width}%"></span></i><strong>${displayDiff}</strong></div>`;
+  }).join("");
+}
+
+function officialAnalysisTemplate(card) {
+  const hasPrevious = Number.isFinite(card.previousOverallRating);
+  const hasChange = Number.isFinite(card.overallChange);
+  const ovrValue = hasPrevious ? `${card.previousOverallRating} → ${card.overallRating}` : `OVR ${card.overallRating}`;
+  const trend = hasChange
+    ? `${card.overallChange > 0 ? "▲ +" : card.overallChange < 0 ? "▼ " : ""}${card.overallChange}`
+    : "-";
+  const changes = splitAnalysisChanges(card.analysisChanges);
+  const hasAnalysisChanges = changes.rising.length || changes.falling.length;
+  const analysisSections = hasAnalysisChanges ? `
+      ${changes.rising.length ? `
+      <div class="result-section up">
+        <div class="result-section-head">상승 스탯 TOP 3 <span>↗</span></div>
+        <div class="result-grid">${renderAnalysisChanges(changes.rising, "up")}</div>
+      </div>` : ""}
+      ${changes.falling.length ? `
+      <div class="result-section down">
+        <div class="result-section-head">하락 스탯 TOP 3 <span>↘</span></div>
+        <div class="result-grid">${renderAnalysisChanges(changes.falling, "down")}</div>
+      </div>` : ""}
+      <p class="analysis-note">※ 최근 이전 경기 평균 대비 절대 변화량 2 이상인 항목만 표시합니다.</p>
+    ` : `
+      <div class="result-section up">
+        <div class="result-section-head">강점 TOP 3 <span>↗</span></div>
+        <div class="result-grid">${renderOfficialResultStats(card.strengthsTop3, "up")}</div>
+      </div>
+      <div class="result-section down">
+        <div class="result-section-head">보완점 TOP 3 <span>↘</span></div>
+        <div class="result-grid">${renderOfficialResultStats(card.weaknessesTop3, "down")}</div>
+      </div>
+      <p class="analysis-note">※ 동점인 경우 대표 포지션과 플레이유형의 핵심 능력을 우선 표시합니다.</p>
+    `;
+  return `
+      <div class="result-title">
+        <h3>MATCH ANALYSIS</h3>
+        <button data-close-sheet type="button" aria-label="결과창 닫기">×</button>
+      </div>
+      <p class="result-description">최신 경기 동료 평가 기반 분석입니다.</p>
+      <div class="result-overall">
+        <div><small>OVR</small><strong>${ovrValue}</strong></div>
+        <em>${trend}</em>
+      </div>
+      ${analysisSections}
+      <div class="style-change">
+        <small>경기 분석 요약</small>
+        <p>${card.matchAnalysisText}</p>
+      </div>
+      <button class="primary full" data-close-sheet type="button">확인</button>
+    `;
+}
+
 function renderRadar(target, stats, size = 140) {
   const center = size / 2;
   const detailed = size > 180;
@@ -310,6 +498,7 @@ function showToast(message) {
 function openSheet(kind) {
   const overlay = document.querySelector("#overlay");
   const sheet = document.querySelector("#sheet");
+  const officialAnalysisCard = latestHomeAnalysisCard();
   const templates = {
     fab: `
       <h3>무엇을 시작할까요?</h3>
@@ -326,7 +515,7 @@ function openSheet(kind) {
       <input id="friendSearch" placeholder="예: 홍길동" />
       <button class="primary full" id="sendFriendRequest" type="button">친구 요청 보내기</button>
     `,
-    card: `
+    card: officialAnalysisCard ? officialAnalysisTemplate(officialAnalysisCard) : `
       <div class="result-title">
         <h3>MATCH ANALYSIS</h3>
         <button data-close-sheet type="button" aria-label="결과창 닫기">×</button>
@@ -377,7 +566,8 @@ function openSheet(kind) {
   sheet.querySelectorAll("[data-go-sheet]").forEach((button) => {
     button.addEventListener("click", () => {
       closeSheet();
-      setView(button.dataset.goSheet);
+      if (button.dataset.goSheet === "reflection") startReflection(null);
+      else setView(button.dataset.goSheet);
       showToast(button.dataset.goSheet === "evaluate" ? "새 평가를 시작합니다" : "개인 회고를 작성합니다");
     });
   });
@@ -417,11 +607,14 @@ function applyAvatarPreset() {
 
 function renderHome() {
   const stats = currentHomeStats();
+  const analysisCard = latestHomeAnalysisCard();
+  const monthlyCard = latestHomeMonthlyCard();
   const matchScore = calculateMatchScore(average(Object.values(commonRatings)), average([6.7]));
   const positionKey = stats?.currentMainPosition || representativePosition();
   const position = positionLabels[positionKey];
   const profileKey = { am: "cam", dm: "cdm" }[positionKey] || positionKey;
   const profile = playType(profileKey, tendencies);
+  renderActiveMatchProgress();
   const change = document.querySelector(".ovr-line .rise");
   document.querySelector("#homeOvr").textContent = stats ? stats.currentOVR : toOvr(matchScore);
   if (stats) {
@@ -462,6 +655,39 @@ function renderHome() {
   }
   applyAvatarPreset();
   renderRadar(document.querySelector("#homeRadar"), stats ? playerCurrentRadarStats(stats) : radarStats(commonRatings), 320);
+  if (analysisCard) {
+    const strengthLabels = analysisCard.strengthsTop3.slice(0, 3).map(analysisItemLabel).join(" · ");
+    const weaknessLabels = analysisCard.weaknessesTop3.slice(0, 3).map(analysisItemLabel).join(" · ");
+    const changes = splitAnalysisChanges(analysisCard.analysisChanges);
+    const risingLabels = changes.rising.map((change) => `${analysisItemLabel(change)} +${change.diff}`).join(" · ");
+    const fallingLabels = changes.falling.map((change) => `${analysisItemLabel(change)} ${change.diff}`).join(" · ");
+    document.querySelector(".growth-read small").textContent = "MATCH ANALYSIS";
+    if (changes.rising.length || changes.falling.length) {
+      document.querySelector(".growth-read strong").textContent = risingLabels ? `상승: ${risingLabels}` : "최근 상승 항목 없음";
+      document.querySelector(".growth-read p").textContent = fallingLabels ? `하락: ${fallingLabels}` : "최근 하락 항목 없음";
+    } else {
+      document.querySelector(".growth-read strong").textContent = strengthLabels;
+      document.querySelector(".growth-read p").textContent = `${analysisCard.matchAnalysisText} 보완 포인트: ${weaknessLabels}.`;
+    }
+  }
+  if (monthlyCard) {
+    const monthlyPosition = positionLabels[monthlyCard.mainPosition]?.[0] || "-";
+    const monthlyChange = Number.isFinite(monthlyCard.monthlyOVRChange)
+      ? `${monthlyCard.monthlyOVRChange > 0 ? "+" : ""}${monthlyCard.monthlyOVRChange}`
+      : "-";
+    const monthlyStrengths = (monthlyCard.strengthsSummary || []).slice(0, 3).map((item) => item.label).join(" · ");
+    document.querySelector("#homeMonthlyKicker").textContent = `SEASON CARD · ${monthlyCard.monthKey}`;
+    document.querySelector("#homeMonthlyTitle").textContent = monthlyCard.mainPlayStyle;
+    document.querySelector("#homeMonthlyMeta").hidden = false;
+    document.querySelector("#homeMonthlyMeta").innerHTML = `<strong>${monthlyCard.monthlyOVR}</strong><em>지난달 대비 ${monthlyChange}</em><span>${monthlyPosition}</span><span>${monthlyCard.matchCount}경기 기준</span>`;
+    document.querySelector("#homeMonthlyRadar").hidden = false;
+    renderRadar(document.querySelector("#homeMonthlyRadar"), playerCurrentRadarStats(monthlyCard), 220);
+    document.querySelector("#homeMonthlyDescription").textContent = `이번 달 OVR ${monthlyCard.monthlyOVR}의 ${monthlyCard.mainPlayStyle}로 기록되었습니다.`;
+    document.querySelector("#homeMonthlyPositionText").textContent = `${monthlyPosition} 역할로 ${monthlyCard.matchCount}경기를 평가받았습니다.`;
+    document.querySelector("#homeMonthlyStrengthText").textContent = monthlyStrengths ? `자주 언급된 강점은 ${monthlyStrengths}입니다.` : "월간 강점 데이터가 쌓이는 중입니다.";
+    document.querySelector("#homeMonthlyStrengths").innerHTML = (monthlyCard.strengthsSummary || []).slice(0, 3)
+      .map((item) => `<span>${item.label}</span>`).join("");
+  }
   const recentCards = recentHomeMatchCards();
   if (recentCards.length) {
     document.querySelector("#recentMatches").innerHTML = recentCards.map((card) => {
@@ -497,16 +723,35 @@ function renderStepper() {
 }
 
 function renderEvaluation() {
+  const targetPlayers = evaluationTargetPlayers();
+  const remainingIds = new Set(
+    (window.PlaylogOfficialData?.getRemainingEvaluationTargets?.(currentMatchId, currentUserId) || targetPlayers)
+      .map((player) => player.userId),
+  );
+  const match = activeMatchRecord();
+  const remaining = window.PlaylogOfficialData?.getRemainingEvaluationTargets?.(currentMatchId, currentUserId) || [];
+  const storedPOMVote = window.PlaylogOfficialData?.getMatchAwardVote?.(currentMatchId, currentUserId, "pom")
+    || window.PlaylogOfficialData?.getPOMVote?.(currentMatchId, currentUserId);
+  const storedNextStarVote = window.PlaylogOfficialData?.getMatchAwardVote?.(currentMatchId, currentUserId, "next_star");
+  const pomSelection = selectedPOMTargetId || storedPOMVote?.targetUserId || null;
+  const nextStarSelection = selectedNextStarTargetId || storedNextStarVote?.targetUserId || null;
+  const isAwardStep = currentStep === 6 && Boolean(match) && remaining.length === 0
+    && (!storedPOMVote || !storedNextStarVote);
+  if (!targetPlayers.some((player) => player.name === selectedPlayer)) {
+    selectedPlayer = targetPlayers[0]?.name || "";
+  }
   document.querySelector("#currentTarget").textContent = selectedPlayer;
   document.querySelector(".eval-target").classList.remove("pulse");
   requestAnimationFrame(() => document.querySelector(".eval-target").classList.add("pulse"));
-  document.querySelector("#stepTitle").textContent = flowSteps[currentStep];
-  document.querySelector("#stepHelp").textContent = currentStep === 2 ? "6점은 평균적인 플레이입니다. 못했다는 의미가 아닙니다." : "평가 데이터는 공식 선수카드에만 반영됩니다.";
+  document.querySelector("#stepTitle").textContent = isAwardStep ? "경기 투표" : currentStep >= 6 ? "평가 저장 완료" : flowSteps[currentStep];
+  document.querySelector("#stepHelp").textContent = isAwardStep
+    ? "POM과 다음 경기 주인공을 선택해주세요."
+    : currentStep === 2 ? "6점은 평균적인 플레이입니다. 못했다는 의미가 아닙니다." : "평가 데이터는 공식 선수카드에만 반영됩니다.";
   renderStepper();
 
   const pane = document.querySelector("#evaluationPane");
   if (currentStep === 0) {
-    pane.innerHTML = `<div class="selector-grid">${players.map((player) => `<button class="choice-card ${player === selectedPlayer ? "selected" : ""}" data-player="${player}" type="button">${player}<br><small>평가하기</small></button>`).join("")}</div>${actions()}`;
+    pane.innerHTML = `<div class="selector-grid">${targetPlayers.map((player) => `<button class="choice-card ${player.name === selectedPlayer ? "selected" : ""}" data-player="${player.name}" type="button">${player.name}<br><small>${remainingIds.has(player.userId) ? "평가하기" : "평가 완료"}</small></button>`).join("")}</div>${actions()}`;
   } else if (currentStep === 1) {
     pane.innerHTML = `<div class="selector-grid">${positions.map(([key, label, desc]) => `<button class="choice-card ${key === selectedPosition ? "selected" : ""}" data-position="${key}" type="button"><strong>${label}</strong><br><small>${desc}</small></button>`).join("")}</div>${actions()}`;
   } else if (currentStep === 2) {
@@ -523,13 +768,62 @@ function renderEvaluation() {
   } else if (currentStep === 5) {
     const previewCard = window.PlaylogEngine.generatePlayerMatchCard({
       matchId: currentMatchId,
-      userId: playerIds[selectedPlayer],
+      userId: selectedPlayerId(),
       evaluations: [buildEvaluation("evaluation:preview")],
     });
     pane.innerHTML = `<label>이 선수 한 줄 평<textarea id="evaluationComment" rows="4" placeholder="오늘 경기에서 보인 특징을 남겨주세요.">${overallComment}</textarea></label><div class="self-result"><span>${selectedPlayer} 예상 OVR</span><strong>${previewCard.overallRating}</strong></div>${actions("이전", "평가 저장 완료")}`;
+  } else if (isAwardStep) {
+    const candidates = targetPlayers;
+    pane.innerHTML = `<div class="complete-card"><h2>오늘 가장 인상 깊었던 선수</h2><p>POM은 OVR에 영향을 주지 않으며 결과 공개 시 함께 공개됩니다.</p><div class="selector-grid">${candidates.map((player) => `<button class="choice-card ${pomSelection === player.userId ? "selected" : ""}" data-pom-target="${player.userId}" type="button">${player.name}<br><small>선택하기</small></button>`).join("")}</div><h2>다음 경기에서 기대되는 선수</h2><p>다음 경기 주인공도 참가자 중 한 명을 선택합니다.</p><div class="selector-grid">${candidates.map((player) => `<button class="choice-card ${nextStarSelection === player.userId ? "selected" : ""}" data-next-star-target="${player.userId}" type="button">${player.name}<br><small>선택하기</small></button>`).join("")}</div><button class="primary full" data-submit-awards type="button" ${pomSelection && nextStarSelection ? "" : "disabled"}>투표 저장</button><button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요? <small>선택</small></button></div>`;
+    pane.querySelectorAll("[data-pom-target]").forEach((button) => button.addEventListener("click", () => {
+      selectedPOMTargetId = button.dataset.pomTarget;
+      renderEvaluation();
+    }));
+    pane.querySelectorAll("[data-next-star-target]").forEach((button) => button.addEventListener("click", () => {
+      selectedNextStarTargetId = button.dataset.nextStarTarget;
+      renderEvaluation();
+    }));
+    pane.querySelector("[data-submit-awards]")?.addEventListener("click", () => {
+      if (!storedPOMVote || storedPOMVote.targetUserId !== pomSelection) {
+        window.PlaylogOfficialData.saveMatchAwardVote({
+          matchId: currentMatchId,
+          voterUserId: currentUserId,
+          targetUserId: pomSelection,
+          type: "pom",
+          createdAt: new Date().toISOString(),
+        });
+      }
+      if (!storedNextStarVote || storedNextStarVote.targetUserId !== nextStarSelection) {
+        window.PlaylogOfficialData.saveMatchAwardVote({
+          matchId: currentMatchId,
+          voterUserId: currentUserId,
+          targetUserId: nextStarSelection,
+          type: "next_star",
+          createdAt: new Date().toISOString(),
+        });
+      }
+      showToast("경기 투표가 저장되었습니다");
+      currentStep = 7;
+      renderEvaluation();
+    });
+    pane.querySelector("[data-start-match-reflection]")?.addEventListener("click", () => startReflection(currentMatchId));
+    return;
   } else {
-    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>평가 저장 완료!</h2><p>동료 평가 원본이 공식 카드 생성 데이터에 저장되었습니다.</p><div class="self-result"><span>${selectedPlayer} 생성 OVR</span><strong>${lastGeneratedCard?.overallRating || "-"}</strong></div><button class="primary full" data-go="cards" type="button">결과 카드 미리보기</button></div>`;
-    pane.querySelector("[data-go]")?.addEventListener("click", () => setView("cards"));
+    const resultReady = !match || match.status === "published";
+    const actionLabel = remaining.length ? "다음 선수 평가하기" : resultReady ? "결과 카드 미리보기" : "공개 대기 상태 보기";
+    const awardNote = storedPOMVote && storedNextStarVote ? "<p>투표가 저장되었습니다. 결과 공개 시 확인할 수 있습니다.</p>" : "";
+    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>평가 저장 완료!</h2><p>${resultReady ? "공식 선수카드 결과에 반영되었습니다." : "평가가 저장되었습니다. 결과 공개를 기다리는 중입니다."}</p>${awardNote}<div class="self-result"><span>${selectedPlayer} ${resultReady ? "생성 OVR" : "결과 상태"}</span><strong>${resultReady ? (lastGeneratedCard?.overallRating || "-") : "대기"}</strong></div><button class="primary full" data-complete-action type="button">${actionLabel}</button>${match && remaining.length === 0 ? '<button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요?</button>' : ""}</div>`;
+    pane.querySelector("[data-complete-action]")?.addEventListener("click", () => {
+      if (remaining.length) {
+        selectedPlayer = userNames[remaining[0].userId] || remaining[0].userId;
+        currentStep = 0;
+        renderEvaluation();
+        return;
+      }
+      if (resultReady) setView("cards");
+      else setView("home");
+    });
+    pane.querySelector("[data-start-match-reflection]")?.addEventListener("click", () => startReflection(currentMatchId));
     return;
   }
 
@@ -575,11 +869,11 @@ function renderEvaluation() {
     renderEvaluation();
   });
   pane.querySelector("[data-next]")?.addEventListener("click", () => {
-    if (currentStep === flowSteps.length - 1) {
+    if (currentStep === 5) {
       const evaluation = buildEvaluation(`evaluation:ui:${Date.now()}`);
       lastGeneratedCard = window.PlaylogOfficialData.saveEvaluation(evaluation);
       showToast("평가가 자동 저장되었습니다");
-      currentStep = 6;
+      currentStep = activeMatchRecord() ? 6 : 7;
     } else {
       currentStep += 1;
     }
@@ -603,7 +897,7 @@ function buildEvaluation(id) {
     id,
     matchId: currentMatchId,
     evaluatorUserId: currentUserId,
-    targetUserId: playerIds[selectedPlayer],
+    targetUserId: selectedPlayerId(),
     selectedPosition,
     overallComment: overallComment.trim(),
     createdAt: new Date().toISOString(),
@@ -621,6 +915,130 @@ function buildEvaluation(id) {
 
 function actions(prevLabel = "이전", nextLabel = "다음") {
   return `<div class="eval-actions"><button class="secondary" data-prev type="button">${prevLabel}</button><button class="primary" data-next type="button">${nextLabel}</button></div>`;
+}
+
+function resetReflection(matchId = null) {
+  reflectionStep = 0;
+  reflectionMatchId = matchId;
+  reflectionPosition = "free";
+  reflectionCommonScores = Object.fromEntries(evaluationFields.common.map((field) => [field.key, 6]));
+  reflectionPositionScores = Object.fromEntries(evaluationFields.position.free.map((field) => [field.key, 6]));
+  reflectionTraits = [];
+  reflectionHighlights = [];
+  satisfactionScore = 7;
+  feltStrength = "";
+  feltWeakness = "";
+  reflectionGoal = "";
+  reflectionMemo = "";
+}
+
+function startReflection(matchId = null) {
+  resetReflection(matchId);
+  setView("reflection");
+}
+
+function reflectionActions(nextLabel = "다음") {
+  return `<div class="eval-actions"><button class="secondary" data-reflection-prev type="button">이전</button><button class="primary" data-reflection-next type="button">${nextLabel}</button></div>`;
+}
+
+function buildSelfReflection(id) {
+  return {
+    id,
+    userId: currentUserId,
+    matchId: reflectionMatchId,
+    selectedPosition: reflectionPosition,
+    selfScores: [
+      ...evaluationFields.common.map((field) => ({ category: "common", key: field.key, score: reflectionCommonScores[field.key] })),
+      ...evaluationFields.position[reflectionPosition].map((field) => ({ category: "position", key: field.key, score: reflectionPositionScores[field.key] })),
+    ],
+    selfTraits: reflectionTraits.map((key) => ({ key, score: observedTraitScore })),
+    selfHighlights: reflectionHighlights.slice(0, 2).map((key) => ({ key })),
+    satisfactionScore,
+    feltStrength: feltStrength.trim(),
+    feltWeakness: feltWeakness.trim(),
+    nextGoal: reflectionGoal.trim(),
+    memo: reflectionMemo.trim(),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function renderReflection() {
+  document.querySelector("#reflectionContext").textContent = reflectionMatchId
+    ? "경기 후 회고 · 현재 경기와 연결됨"
+    : "빠른 회고 · 경기 연결 없음";
+  document.querySelector("#reflectionStepTitle").textContent = reflectionSteps[reflectionStep] || "저장 완료";
+  document.querySelector("#reflectionStepHelp").textContent = reflectionStep === 4
+    ? "만족도와 다음 목표를 개인 기록으로 남겨주세요."
+    : "입력 내용은 공식 선수카드에 반영되지 않습니다.";
+  document.querySelector("#reflectionStepper").innerHTML = reflectionSteps
+    .map((_, index) => `<span class="${index < reflectionStep ? "done" : index === reflectionStep ? "current" : ""}"></span>`).join("");
+  const pane = document.querySelector("#reflectionPane");
+  if (reflectionStep === 0) {
+    pane.innerHTML = `<div class="selector-grid">${positions.map(([key, label, desc]) => `<button class="choice-card ${key === reflectionPosition ? "selected" : ""}" data-reflection-position="${key}" type="button"><strong>${label}</strong><br><small>${desc}</small></button>`).join("")}</div>${reflectionActions()}`;
+  } else if (reflectionStep === 1) {
+    pane.innerHTML = `<div class="rating-list">${renderSelfRatingFields(evaluationFields.common, "common", reflectionCommonScores)}</div>${reflectionActions()}`;
+  } else if (reflectionStep === 2) {
+    pane.innerHTML = `<div class="rating-list">${renderSelfRatingFields(evaluationFields.position[reflectionPosition], "position", reflectionPositionScores)}</div>${reflectionActions()}`;
+  } else if (reflectionStep === 3) {
+    pane.innerHTML = `<h3 class="eval-subtitle">플레이 성향 <small>선택 입력</small></h3><div class="chip-grid trait-grid">${evaluationFields.traits.map((field) => `<button class="chip ${reflectionTraits.includes(field.key) ? "selected" : ""}" data-reflection-trait="${field.key}" type="button"><strong>${field.label}</strong><small>${field.description}</small></button>`).join("")}</div><h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3><div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${reflectionHighlights.includes(field.key) ? "selected" : ""}" data-reflection-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>${reflectionActions()}`;
+  } else if (reflectionStep === 4) {
+    pane.innerHTML = `<label>오늘 만족도<input id="reflectionSatisfaction" type="range" min="1" max="10" value="${satisfactionScore}" /></label><div class="self-result"><span>만족도</span><strong id="reflectionSatisfactionValue">${satisfactionScore}</strong></div><label>가장 만족한 점<textarea id="reflectionStrength" rows="2" placeholder="오늘 잘 된 플레이">${feltStrength}</textarea></label><label>가장 아쉬운 점<textarea id="reflectionWeakness" rows="2" placeholder="보완하고 싶은 플레이">${feltWeakness}</textarea></label><label>다음 경기 목표<input id="reflectionGoal" value="${reflectionGoal}" placeholder="다음 경기에서 시도할 목표" /></label><label>자유 메모<textarea id="reflectionMemo" rows="3" placeholder="개인적으로 남기고 싶은 기록">${reflectionMemo}</textarea></label>${reflectionActions("회고 저장하기")}`;
+  } else {
+    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>자가 회고 저장 완료!</h2><p>공식 선수카드와 분리된 개인 기록으로 저장되었습니다.</p><button class="primary full" data-go-reflection-home type="button">홈으로 돌아가기</button></div>`;
+    pane.querySelector("[data-go-reflection-home]")?.addEventListener("click", () => setView("home"));
+    return;
+  }
+  pane.querySelectorAll("[data-reflection-position]").forEach((button) => button.addEventListener("click", () => {
+    reflectionPosition = button.dataset.reflectionPosition;
+    reflectionPositionScores = Object.fromEntries(evaluationFields.position[reflectionPosition].map((field) => [field.key, 6]));
+    renderReflection();
+  }));
+  pane.querySelectorAll("[data-self-rating-key]").forEach((select) => select.addEventListener("change", () => {
+    const scores = select.dataset.selfRatingCategory === "common" ? reflectionCommonScores : reflectionPositionScores;
+    scores[select.dataset.selfRatingKey] = Number(select.value);
+  }));
+  pane.querySelectorAll("[data-reflection-trait]").forEach((button) => button.addEventListener("click", () => {
+    const key = button.dataset.reflectionTrait;
+    reflectionTraits = reflectionTraits.includes(key) ? reflectionTraits.filter((item) => item !== key) : [...reflectionTraits, key];
+    renderReflection();
+  }));
+  pane.querySelectorAll("[data-reflection-highlight]").forEach((button) => button.addEventListener("click", () => {
+    const key = button.dataset.reflectionHighlight;
+    if (!reflectionHighlights.includes(key) && reflectionHighlights.length >= 2) {
+      showToast("추가 관찰 능력치는 최대 2개까지 선택할 수 있어요");
+      return;
+    }
+    reflectionHighlights = reflectionHighlights.includes(key)
+      ? reflectionHighlights.filter((item) => item !== key)
+      : [...reflectionHighlights, key];
+    renderReflection();
+  }));
+  pane.querySelector("#reflectionSatisfaction")?.addEventListener("input", (event) => {
+    satisfactionScore = Number(event.target.value);
+    document.querySelector("#reflectionSatisfactionValue").textContent = satisfactionScore;
+  });
+  pane.querySelector("#reflectionStrength")?.addEventListener("input", (event) => { feltStrength = event.target.value; });
+  pane.querySelector("#reflectionWeakness")?.addEventListener("input", (event) => { feltWeakness = event.target.value; });
+  pane.querySelector("#reflectionGoal")?.addEventListener("input", (event) => { reflectionGoal = event.target.value; });
+  pane.querySelector("#reflectionMemo")?.addEventListener("input", (event) => { reflectionMemo = event.target.value; });
+  pane.querySelector("[data-reflection-prev]")?.addEventListener("click", () => {
+    reflectionStep = Math.max(0, reflectionStep - 1);
+    renderReflection();
+  });
+  pane.querySelector("[data-reflection-next]")?.addEventListener("click", () => {
+    if (reflectionStep === reflectionSteps.length - 1) {
+      window.PlaylogOfficialData.saveSelfReflection(buildSelfReflection(`self-reflection:${Date.now()}`));
+      showToast("개인 회고가 저장되었습니다");
+      reflectionStep = reflectionSteps.length;
+    } else {
+      reflectionStep += 1;
+    }
+    renderReflection();
+  });
+}
+
+function renderSelfRatingFields(fields, category, ratings) {
+  return fields.map((field) => `<label class="rating-row"><span><strong>${field.label}</strong><small>${field.description}</small></span><select data-self-rating-category="${category}" data-self-rating-key="${field.key}" aria-label="${field.label} 자가 평가">${Array.from({ length: 10 }, (_, index) => index + 1).map((value) => `<option value="${value}" ${value === ratings[field.key] ? "selected" : ""}>${value}</option>`).join("")}</select></label>`).join("");
 }
 
 function renderCards() {
@@ -662,8 +1080,10 @@ function setView(view) {
   document.querySelector(".hero").hidden = view !== "home";
   document.querySelector(".fab").hidden = view !== "home";
   window.scrollTo({ top: 0, behavior: "instant" });
+  if (view === "home") renderHome();
   if (view === "evaluate") renderEvaluation();
   if (view === "cards") renderCards();
+  if (view === "reflection") renderReflection();
   if (view === "friends") renderFriends();
 }
 
@@ -672,7 +1092,10 @@ function bindInteractions() {
     const toastButton = event.target.closest("[data-toast]");
     if (toastButton) showToast(toastButton.dataset.toast);
   });
-  document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.go)));
+  document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.go === "reflection") startReflection(null);
+    else setView(button.dataset.go);
+  }));
   document.querySelector("#fab").addEventListener("click", () => {
     document.querySelector("#fab").classList.add("open");
     openSheet("fab");
@@ -702,14 +1125,11 @@ function bindInteractions() {
   document.querySelector("#overlay").addEventListener("click", (event) => {
     if (event.target.id === "overlay") closeSheet();
   });
-  document.querySelector("#selfScore").addEventListener("input", (event) => {
-    document.querySelector("#selfOvr").textContent = toOvr(Number(event.target.value));
-  });
-  document.querySelector("#saveReflection").addEventListener("click", () => showToast("개인 회고가 저장되었습니다"));
 }
 
 renderHome();
 renderEvaluation();
+renderReflection();
 renderCards();
 renderFriends();
 bindInteractions();

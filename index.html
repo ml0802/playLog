@@ -67,18 +67,19 @@
         <article class="match-progress">
           <div class="match-icon">⚽</div>
           <div>
-            <span class="live-pill">수집 중</span>
-            <h3>상암 목요일 풋살</h3>
-            <p>2026.05.23 (토) 21:00 · 상암 풋살장</p>
-            <div class="faces" aria-label="참가자 6명 중 4명 완료">
+            <span class="live-pill" id="activeMatchStatus">수집 중</span>
+            <h3 id="activeMatchTitle">상암 목요일 풋살</h3>
+            <p id="activeMatchMeta">2026.05.23 (토) 21:00 · 상암 풋살장</p>
+            <p id="activeMatchWaiting" hidden></p>
+            <div class="faces" id="activeMatchFaces" aria-label="참가자 6명 중 4명 완료">
               <span>민</span><span>지</span><span>현</span><span>우</span><i></i><i></i>
             </div>
           </div>
-          <div class="progress-ring" style="--progress: 66">
-            <strong>4/6</strong>
-            <small>완료</small>
+          <div class="progress-ring" id="activeMatchProgress" style="--progress: 66">
+            <strong id="activeMatchProgressValue">4/6</strong>
+            <small id="activeMatchProgressLabel">완료</small>
           </div>
-          <button class="primary full" data-go="evaluate" type="button">이어서 평가하기 ›</button>
+          <button class="primary full" id="activeMatchAction" data-go="evaluate" type="button">이어서 평가하기 ›</button>
         </article>
 
         <div class="section-head">
@@ -90,13 +91,15 @@
         <h2 class="section-title">이번 달 요약</h2>
         <article class="coach-report">
           <div class="report-title">
-            <span>COACH REPORT</span>
-            <strong>안정적인 연결 역할로 성장 중</strong>
+            <span id="homeMonthlyKicker">COACH REPORT</span>
+            <strong id="homeMonthlyTitle">안정적인 연결 역할로 성장 중</strong>
           </div>
-          <p>최근엔 짧게 연결하는 플레이가 많아졌어요.</p>
-          <p>압박 상황에서도 패스를 선택하는 빈도가 늘었습니다.</p>
-          <p>무리한 돌파보다 안정적인 연결 플레이 비율이 증가했습니다.</p>
-          <div class="report-tags">
+          <div class="season-card-meta" id="homeMonthlyMeta" hidden></div>
+          <div class="monthly-radar" id="homeMonthlyRadar" hidden></div>
+          <p id="homeMonthlyDescription">최근엔 짧게 연결하는 플레이가 많아졌어요.</p>
+          <p id="homeMonthlyPositionText">압박 상황에서도 패스를 선택하는 빈도가 늘었습니다.</p>
+          <p id="homeMonthlyStrengthText">무리한 돌파보다 안정적인 연결 플레이 비율이 증가했습니다.</p>
+          <div class="report-tags" id="homeMonthlyStrengths">
             <span>패스 선택 증가</span><span>침착성 상승</span><span>프리롤 움직임</span>
           </div>
         </article>
@@ -146,15 +149,15 @@
       </section>
 
       <section class="content-view" data-view="reflection">
-        <article class="reflection-card">
+        <article class="flow-card reflection-card">
           <p class="eyebrow purple">개인 회고 카드</p>
           <h2>내가 생각한 나</h2>
           <p>공식 선수카드와 분리된 자가 기록입니다.</p>
-          <label>한 줄 회고<textarea id="reflectionText" rows="4">오늘은 공을 오래 끌지 않고 빠르게 연결하려고 했다.</textarea></label>
-          <label>오늘 만족도<input id="selfScore" type="range" min="1" max="10" value="7" /></label>
-          <label>다음 경기 목표<input id="nextGoal" value="수비 전환 첫 3초 더 빠르게 반응하기" /></label>
-          <div class="self-result"><span>자가 OVR</span><strong id="selfOvr">79</strong></div>
-          <button class="primary full" id="saveReflection" type="button">회고 저장하기</button>
+          <p id="reflectionContext">빠른 회고 · 경기 연결 없음</p>
+          <h2 id="reflectionStepTitle">포지션 선택</h2>
+          <p id="reflectionStepHelp">오늘 내가 수행한 역할을 선택해주세요.</p>
+          <div class="stepper" id="reflectionStepper"></div>
+          <div id="reflectionPane"></div>
         </article>
       </section>
 

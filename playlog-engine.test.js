@@ -56,6 +56,10 @@ assert.equal(card.playStyle, "연결형 프리롤");
 assert.equal(card.playStyleCode, "Link Playmaker");
 assert.ok(card.strengthsTop3.some((item) => item.key === "spaceConnection"));
 assert.equal(card.weaknessesTop3.length, 3);
+assert.equal(card.analysisScores.length, 15);
+assert.deepEqual(card.analysisChanges, []);
+assert.ok(card.strengthsTop3.every((item) => card.matchAnalysisText.includes(item.label)));
+assert.ok(card.weaknessesTop3.every((item) => card.matchAnalysisText.includes(item.label)));
 assert.ok(card.matchAnalysisText.includes("보완할 여지가 있습니다"));
 assert.equal(JSON.stringify(peerEvaluations), snapshot);
 
@@ -93,6 +97,61 @@ const commonFallbackAnalysis = engine.generateMatchAnalysis([
   { category: "common", key: "stamina", score: 7 },
 ], { mainEvaluatedPosition: "attack", playStyle: "침투형 피니셔" });
 assert.equal(commonFallbackAnalysis.strengthsTop3[0].key, "decision");
+
+const analysisSnapshot = (id, generatedAt, scoreByKey) => ({
+  id,
+  matchId: `match:${id}`,
+  userId,
+  generatedAt,
+  mainEvaluatedPosition: "am",
+  playStyle: "조율형 플레이메이커",
+  analysisScores: Object.entries(scoreByKey).map(([key, score]) => ({
+    key,
+    label: key,
+    category: "common",
+    score,
+  })),
+});
+const priorAnalysisCards = [
+  analysisSnapshot("recent-1", "2026-05-03T00:00:00.000Z", { stablePass: 6, buildUp: 8, composure: 7 }),
+  analysisSnapshot("recent-2", "2026-05-02T00:00:00.000Z", { stablePass: 6, buildUp: 7, composure: 7 }),
+  analysisSnapshot("recent-3", "2026-05-01T00:00:00.000Z", { stablePass: 6, buildUp: 6, composure: 7 }),
+];
+const latestAnalysisCard = analysisSnapshot("latest", "2026-05-04T00:00:00.000Z", {
+  stablePass: 9,
+  buildUp: 5,
+  composure: 8,
+});
+assert.deepEqual(engine.calculateAnalysisChanges(latestAnalysisCard, priorAnalysisCards), [
+  {
+    key: "stablePass", label: "stablePass", category: "common",
+    currentScore: 9, previousRecentAverage: 6, diff: 3, comparisonMatchCount: 3,
+  },
+  {
+    key: "buildUp", label: "buildUp", category: "common",
+    currentScore: 5, previousRecentAverage: 7, diff: -2, comparisonMatchCount: 3,
+  },
+]);
+assert.deepEqual(engine.calculateAnalysisChanges(latestAnalysisCard, priorAnalysisCards.slice(0, 2)), [
+  {
+    key: "stablePass", label: "stablePass", category: "common",
+    currentScore: 9, previousRecentAverage: 6, diff: 3, comparisonMatchCount: 2,
+  },
+  {
+    key: "buildUp", label: "buildUp", category: "common",
+    currentScore: 5, previousRecentAverage: 7.5, diff: -2.5, comparisonMatchCount: 2,
+  },
+]);
+assert.deepEqual(engine.calculateAnalysisChanges(latestAnalysisCard, priorAnalysisCards.slice(0, 1)), [
+  {
+    key: "stablePass", label: "stablePass", category: "common",
+    currentScore: 9, previousRecentAverage: 6, diff: 3, comparisonMatchCount: 1,
+  },
+  {
+    key: "buildUp", label: "buildUp", category: "common",
+    currentScore: 5, previousRecentAverage: 8, diff: -3, comparisonMatchCount: 1,
+  },
+]);
 
 const withoutTraits = engine.generatePlayerMatchCard({
   matchId,

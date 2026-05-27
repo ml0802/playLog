@@ -211,6 +211,13 @@ svg text { font-family: inherit; }
 .report-title { padding-bottom: 13px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,.12); }
 .report-title span { display: block; margin-bottom: 7px; color: #a886ff; font-size: 11px; font-weight: 900; letter-spacing: .1em; }
 .report-title strong { font-size: 17px; }
+.season-card-meta { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; margin: -2px 0 11px; }
+.season-card-meta strong { font-size: 25px; margin-right: 3px; }
+.season-card-meta em { color: var(--green); font-size: 13px; font-style: normal; font-weight: 900; }
+.season-card-meta span { padding: 5px 8px; border-radius: 999px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.83); font-size: 11px; font-weight: 800; }
+.monthly-radar { height: 145px; margin: -4px 0 9px; }
+.monthly-radar svg { width: 100%; height: 100%; }
+.monthly-radar text { fill: rgba(255,255,255,.83); font-size: 9px; font-weight: 800; }
 .coach-report p { position: relative; margin: 0 0 10px; padding-left: 13px; color: rgba(255,255,255,.82); font-size: 13px; line-height: 1.45; }
 .coach-report p::before { content: ""; position: absolute; left: 1px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: #9170ff; }
 .report-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
