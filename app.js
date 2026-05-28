@@ -1,4 +1,4 @@
-const commonRatings = {
+﻿const commonRatings = {
   work_rate: 7,
   decision: 7,
   safe_pass: 7,
@@ -70,6 +70,7 @@ const avatarSheets = {
 const evaluationFields = window.PlaylogEngine.EVALUATION_FIELDS;
 const currentUserId = "user:seunghyun";
 const currentMatchId = window.PlaylogOfficialData?.activeEvaluationMatchId || "match:sangam-2026-05-23";
+let selectedMatchId = currentMatchId;
 const observedTraitScore = 8;
 const playerIds = {
   "김민수": "user:minsu",
@@ -156,6 +157,7 @@ let matchResultMode = "summary";
 let matchResultSelectedCard = null;
 let evaluationMode = "list";
 let reflectionMode = "list";
+let newMatchDraft = null;
 let toastTimer;
 
 function resetEvaluationDraft() {
@@ -172,7 +174,7 @@ function resetEvaluationDraft() {
 function activeEvaluationForTarget(targetUserId = selectedPlayerId()) {
   return (window.PlaylogOfficialData?.evaluations || [])
     .filter((evaluation) =>
-      evaluation.matchId === currentMatchId
+      evaluation.matchId === selectedMatchId
       && evaluation.evaluatorUserId === currentUserId
       && evaluation.targetUserId === targetUserId
       && evaluation.isActive !== false,
@@ -209,9 +211,9 @@ function resetAwardDraft() {
 }
 
 function loadAwardDraft() {
-  const pomVote = window.PlaylogOfficialData?.getMatchAwardVote?.(currentMatchId, currentUserId, "pom")
-    || window.PlaylogOfficialData?.getPOMVote?.(currentMatchId, currentUserId);
-  const nextStarVote = window.PlaylogOfficialData?.getMatchAwardVote?.(currentMatchId, currentUserId, "next_star");
+  const pomVote = window.PlaylogOfficialData?.getMatchAwardVote?.(selectedMatchId, currentUserId, "pom")
+    || window.PlaylogOfficialData?.getPOMVote?.(selectedMatchId, currentUserId);
+  const nextStarVote = window.PlaylogOfficialData?.getMatchAwardVote?.(selectedMatchId, currentUserId, "next_star");
   selectedPOMTargetId = pomVote?.targetUserId || null;
   selectedNextStarTargetId = nextStarVote?.targetUserId || null;
   pomReason = pomVote?.reason || "";
@@ -244,11 +246,11 @@ function fieldLabel(key) {
 }
 
 function activeMatchRecord() {
-  return window.PlaylogOfficialData?.matches?.find((match) => match.id === currentMatchId) || null;
+  return window.PlaylogOfficialData?.matches?.find((match) => match.id === selectedMatchId) || null;
 }
 
 function evaluationTargetPlayers() {
-  const targets = window.PlaylogOfficialData?.getEvaluationTargets?.(currentMatchId, currentUserId);
+  const targets = window.PlaylogOfficialData?.getEvaluationTargets?.(selectedMatchId, currentUserId);
   if (!targets?.length) {
     return fallbackPlayers.map((name) => ({ name, userId: playerIds[name] }));
   }
@@ -269,7 +271,7 @@ function currentUserMatches() {
     .sort((left, right) => new Date(right.date || right.createdAt || 0).getTime() - new Date(left.date || left.createdAt || 0).getTime());
   if (matches.length) return matches;
   return [{
-    id: currentMatchId,
+    id: selectedMatchId,
     title: "상암 목요일 풋살",
     date: "2026-05-23T21:00:00.000+09:00",
     location: "상암 풋살장",
@@ -293,13 +295,16 @@ function currentUserMatchState(match) {
   if (match.status === "published") return "평가완료";
   const participant = (match.participants || []).find((item) => item.userId === currentUserId);
   const hasTargets = (match.participants || []).some((item) => item.userId !== currentUserId);
-  if (participant?.evaluationCompleted || (hasTargets && matchRemainingTargets(match).length === 0)) return "평가완료";
+  const evaluationCompleted = participant?.evaluationCompleted || (hasTargets && matchRemainingTargets(match).length === 0);
+  if (evaluationCompleted && !hasRequiredAwardVotes(match.id)) return "투표 필요";
+  if (evaluationCompleted) return "평가완료";
   const progress = matchProgress(match);
   return progress.completedCount > 0 ? "평가중" : "미평가";
 }
 
 function matchStatusBadge(match) {
   if (match.status === "published") return "결과공개";
+  if (currentUserMatchState(match) === "투표 필요") return "투표 필요";
   if (currentUserMatchState(match) === "평가완료") return "결과공개대기";
   if (match.status === "closed") return "경기완료";
   return "진행중";
@@ -307,8 +312,71 @@ function matchStatusBadge(match) {
 
 function matchActionLabel(match) {
   if (match.status === "published") return "결과 보기";
+  if (currentUserMatchState(match) === "투표 필요") return "투표 진행";
   if (currentUserMatchState(match) === "평가완료") return "공개 대기";
   return "평가 진행";
+}
+
+function hasRequiredAwardVotes(matchId = selectedMatchId) {
+  const match = window.PlaylogOfficialData?.matches?.find((item) => item.id === matchId) || null;
+  if (!isAwardVotingEnabled(match)) return true;
+  const pomVote = window.PlaylogOfficialData?.getMatchAwardVote?.(matchId, currentUserId, "pom")
+    || window.PlaylogOfficialData?.getPOMVote?.(matchId, currentUserId);
+  const nextStarVote = window.PlaylogOfficialData?.getMatchAwardVote?.(matchId, currentUserId, "next_star");
+  return Boolean(pomVote && nextStarVote);
+}
+
+function isAwardVotingEnabled(match = activeMatchRecord()) {
+  if (!match) return true;
+  return match.awardVotingEnabled !== false;
+}
+
+function toDatetimeLocalValue(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function fromDatetimeLocalValue(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function matchParticipantCandidates() {
+  const friendIds = (window.PlaylogOfficialData?.friends || [])
+    .filter((friend) => friend.userId === currentUserId && friend.status === "accepted")
+    .map((friend) => friend.friendUserId);
+  return [
+    { userId: currentUserId, name: userNames[currentUserId] || "승현", locked: true },
+    ...friendIds.map((userId) => ({ userId, name: userNames[userId] || userId, locked: false })),
+  ];
+}
+
+function sampleUserOptions() {
+  return Object.entries(playerIds).map(([name, userId]) => ({ name, userId }));
+}
+
+function friendUsers() {
+  const acceptedFriendIds = new Set((window.PlaylogOfficialData?.friends || [])
+    .filter((friend) => friend.userId === currentUserId && friend.status === "accepted")
+    .map((friend) => friend.friendUserId));
+  return sampleUserOptions().filter((user) => acceptedFriendIds.has(user.userId));
+}
+
+function nonFriendUsers() {
+  const acceptedFriendIds = new Set(friendUsers().map((user) => user.userId));
+  return sampleUserOptions().filter((user) => !acceptedFriendIds.has(user.userId));
+}
+
+function resetNewMatchDraft() {
+  newMatchDraft = {
+    title: "",
+    date: toDatetimeLocalValue(new Date()),
+    location: "",
+    participantIds: [currentUserId],
+    deadlineHours: 12,
+    awardVotingEnabled: false,
+    awardVotingTouched: false,
+  };
 }
 
 function matchDisplayMeta(match) {
@@ -321,14 +389,14 @@ function matchDisplayMeta(match) {
 
 function renderActiveMatchProgress() {
   const match = activeMatchRecord();
-  const progress = window.PlaylogOfficialData?.getEvaluationProgress?.(currentMatchId);
+  const progress = window.PlaylogOfficialData?.getEvaluationProgress?.(selectedMatchId);
   if (!match || !progress) return;
-  const waiting = window.PlaylogOfficialData.getPublishWaitingStatus?.(currentMatchId);
+  const waiting = window.PlaylogOfficialData.getPublishWaitingStatus?.(selectedMatchId);
   const pomResult = match.status === "published"
-    ? window.PlaylogOfficialData.calculateMatchAward?.(currentMatchId, "pom")
+    ? window.PlaylogOfficialData.calculateMatchAward?.(selectedMatchId, "pom")
     : null;
   const nextStarResult = match.status === "published"
-    ? window.PlaylogOfficialData.calculateMatchAward?.(currentMatchId, "next_star")
+    ? window.PlaylogOfficialData.calculateMatchAward?.(selectedMatchId, "next_star")
     : null;
   const progressPercent = progress.totalCount ? Math.round((progress.completedCount / progress.totalCount) * 100) : 0;
   document.querySelector("#activeMatchStatus").textContent = match.status === "published" ? "결과 공개" : "결과 공개 대기";
@@ -354,12 +422,6 @@ function renderActiveMatchProgress() {
   document.querySelector("#activeMatchProgressLabel").textContent = match.status === "published" ? "공개" : "평가";
   document.querySelector("#activeMatchAction").textContent = match.status === "published" ? "결과 보기 ›" : "평가 진행 ›";
 }
-let friends = [
-  ["김민수", "OVR +3 · 창의형 플레이메이커"],
-  ["박현우", "최근 상승세 · 수비 참여도 +2"],
-  ["이지훈", "안정 연결형 · 패스 성공률 상승"],
-];
-
 function average(values) {
   const usable = values.filter((value) => typeof value === "number");
   return usable.reduce((sum, value) => sum + value, 0) / usable.length;
@@ -1038,12 +1100,13 @@ function monthlyReportTemplate(card) {
 
 function matchResultTemplate() {
   const match = activeMatchRecord();
-  const pom = window.PlaylogOfficialData?.calculateMatchAward?.(currentMatchId, "pom");
-  const nextStar = window.PlaylogOfficialData?.calculateMatchAward?.(currentMatchId, "next_star");
+  const pom = window.PlaylogOfficialData?.calculateMatchAward?.(selectedMatchId, "pom");
+  const nextStar = window.PlaylogOfficialData?.calculateMatchAward?.(selectedMatchId, "next_star");
   const votes = window.PlaylogOfficialData?.matchAwardVotes || [];
+  const awardsEnabled = isAwardVotingEnabled(match);
   const awardBlock = (title, result, type) => {
     const reasons = votes
-      .filter((vote) => vote.matchId === currentMatchId && vote.type === type && vote.reason)
+      .filter((vote) => vote.matchId === selectedMatchId && vote.type === type && vote.reason)
       .map((vote) => `<li>${escapeHtml(vote.reason)}</li>`)
       .join("");
     const winners = result?.winnerUserIds?.length
@@ -1063,8 +1126,9 @@ function matchResultTemplate() {
       <strong>${match?.title || "경기"}</strong>
       <span>${matchDateText}</span>
     </section>
-    ${awardBlock("POM", pom, "pom")}
-    ${awardBlock("NEXT STAR · 다음 경기 주인공", nextStar, "next_star")}
+    ${awardsEnabled
+      ? `${awardBlock("POM", pom, "pom")}${awardBlock("NEXT STAR · 다음 경기 주인공", nextStar, "next_star")}`
+      : `<section class="result-section"><p>이 경기는 POM / 다음 경기 주인공 투표를 사용하지 않았습니다.</p></section>`}
     <button class="primary full" data-open-match-result-detail type="button">경기 상세 결과 보기</button>
   `;
 }
@@ -1073,7 +1137,7 @@ function matchResultDetailTemplate() {
   const match = activeMatchRecord();
   const participantIds = match?.participants?.map((participant) => participant.userId) || [];
   const participantCards = (window.PlaylogOfficialData?.playerMatchCards || [])
-    .filter((card) => card && card.matchId === currentMatchId)
+    .filter((card) => card && card.matchId === selectedMatchId)
     .sort((left, right) => {
       const leftIndex = participantIds.indexOf(left.userId);
       const rightIndex = participantIds.indexOf(right.userId);
@@ -1100,7 +1164,7 @@ function awardSummaryCard(title, result, type) {
   const votes = window.PlaylogOfficialData?.matchAwardVotes || [];
   const winnerIds = result?.winnerUserIds || [];
   const winnerCards = winnerIds.map((winnerId) => (window.PlaylogOfficialData?.playerMatchCards || [])
-    .find((card) => card.matchId === currentMatchId && card.userId === winnerId)).filter(Boolean);
+    .find((card) => card.matchId === selectedMatchId && card.userId === winnerId)).filter(Boolean);
   const identity = winnerCards[0] ? representativeMatchIdentity(winnerCards[0]) : null;
   const winnerNames = winnerIds.length
     ? winnerIds.map((winnerId) => userNames[winnerId] || winnerId).join(" · ")
@@ -1110,7 +1174,7 @@ function awardSummaryCard(title, result, type) {
     : "";
   const winnerOvr = winnerCards.length ? winnerCards.map((card) => `OVR ${card.overallRating}`).join(" · ") : "";
   const reasons = votes
-    .filter((vote) => vote.matchId === currentMatchId && vote.type === type)
+    .filter((vote) => vote.matchId === selectedMatchId && vote.type === type)
     .map((vote) => sanitizeOptionalText(vote.reason, [pomReasonPlaceholder, nextStarReasonPlaceholder]))
     .filter(Boolean);
   return `
@@ -1136,7 +1200,7 @@ function matchResultParticipantCards() {
   const match = activeMatchRecord();
   const participantIds = match?.participants?.map((participant) => participant.userId) || [];
   return (window.PlaylogOfficialData?.playerMatchCards || [])
-    .filter((card) => card && card.matchId === currentMatchId)
+    .filter((card) => card && card.matchId === selectedMatchId)
     .sort((left, right) => {
       const leftIndex = participantIds.indexOf(left.userId);
       const rightIndex = participantIds.indexOf(right.userId);
@@ -1154,8 +1218,9 @@ function openMatchResultView(mode = "summary", card = null) {
 function renderMatchResult() {
   const pane = document.querySelector("#matchResultPane");
   const match = activeMatchRecord();
-  const pom = window.PlaylogOfficialData?.calculateMatchAward?.(currentMatchId, "pom");
-  const nextStar = window.PlaylogOfficialData?.calculateMatchAward?.(currentMatchId, "next_star");
+  const pom = window.PlaylogOfficialData?.calculateMatchAward?.(selectedMatchId, "pom");
+  const nextStar = window.PlaylogOfficialData?.calculateMatchAward?.(selectedMatchId, "next_star");
+  const awardsEnabled = isAwardVotingEnabled(match);
   if (matchResultMode === "card" && matchResultSelectedCard) {
     pane.innerHTML = `
       <div class="match-result-page-head">
@@ -1188,6 +1253,9 @@ function renderMatchResult() {
           </button>`;
         }).join("") || `<article class="empty-card"><strong>공개된 참가자 카드가 아직 없습니다.</strong></article>`}
       </div>
+      <div class="match-result-bottom-actions">
+        <button class="primary full" data-go-evaluation-list type="button">경기 선택으로 이동</button>
+      </div>
     `;
     bindMatchResultControls(pane);
     return;
@@ -1198,10 +1266,9 @@ function renderMatchResult() {
       <h2>${match?.title || "경기 결과"}</h2>
       <p>${match ? matchDisplayMeta(match) : "경기 정보 없음"}</p>
     </div>
-    <div class="match-result-awards">
-      ${awardSummaryCard("🏆 POM", pom, "pom")}
-      ${awardSummaryCard("★ 다음 경기 주인공", nextStar, "next_star")}
-    </div>
+    ${awardsEnabled
+      ? `<div class="match-result-awards">${awardSummaryCard("🏆 POM", pom, "pom")}${awardSummaryCard("★ 다음 경기 주인공", nextStar, "next_star")}</div>`
+      : `<article class="result-award-card"><div class="result-award-title"><strong>경기 투표 미사용</strong></div><p>이 경기는 POM / 다음 경기 주인공 투표를 사용하지 않았습니다.</p></article>`}
     <button class="primary full" data-match-result-mode="detail" type="button">경기 결과 상세 보기</button>
     <p class="match-result-footnote">상세 창에서 모든 선수의 경기 카드를 확인할 수 있어요.</p>
   `;
@@ -1224,7 +1291,14 @@ function bindMatchResultControls(scope) {
       renderMatchResult();
     });
   });
-  scope.querySelector("[data-match-result-back]")?.addEventListener("click", () => setView("evaluate"));
+  scope.querySelector("[data-match-result-back]")?.addEventListener("click", () => {
+    evaluationMode = "list";
+    setView("evaluate");
+  });
+  scope.querySelector("[data-go-evaluation-list]")?.addEventListener("click", () => {
+    evaluationMode = "list";
+    setView("evaluate");
+  });
   scope.querySelectorAll("[data-match-result-page-card]").forEach((button) => {
     button.addEventListener("click", () => {
       const card = matchResultParticipantCards()
@@ -1294,16 +1368,17 @@ function openSheet(kind, payload = null) {
       <h3>무엇을 시작할까요?</h3>
       <p>플레이로그의 핵심 행동을 바로 시작합니다.</p>
       <div class="sheet-actions">
-        <button class="sheet-action" data-toast-sheet="새 경기 추가는 MVP 다음 단계에서 연결됩니다" type="button">새 경기 추가 <span>＋</span></button>
+        <button class="sheet-action" data-go-sheet="newMatch" type="button">새 경기 추가 <span>＋</span></button>
         <button class="sheet-action" data-go-sheet="evaluate" type="button">평가 진행 <span>›</span></button>
         <button class="sheet-action" data-go-sheet="reflection" type="button">회고 작성 <span>↗</span></button>
       </div>
     `,
     friend: `
       <h3>친구 요청 보내기</h3>
-      <p>닉네임을 검색해서 임시 요청을 보낼 수 있어요.</p>
-      <input id="friendSearch" placeholder="예: 홍길동" />
-      <button class="primary full" id="sendFriendRequest" type="button">친구 요청 보내기</button>
+      <p>MVP에서는 샘플 유저를 바로 친구로 추가합니다.</p>
+      <div class="friend-candidate-list">
+        ${nonFriendUsers().map((user) => `<button class="sheet-action" data-add-friend="${user.userId}" type="button">${user.name}<span>추가</span></button>`).join("") || "<p>추가할 수 있는 샘플 유저가 없습니다.</p>"}
+      </div>
     `,
     card: officialAnalysisCard ? officialAnalysisTemplate(officialAnalysisCard) : `
       <div class="result-title">
@@ -1363,15 +1438,17 @@ function openSheet(kind, payload = null) {
     button.addEventListener("click", () => {
       closeSheet();
       if (button.dataset.goSheet === "evaluate") {
-        evaluationMode = "flow";
-        loadEvaluationDraft(activeEvaluationForTarget(selectedPlayerId()));
-        loadAwardDraft();
-        justCompletedAwards = false;
-        currentStep = 0;
+        evaluationMode = "list";
         setView("evaluate");
-      } else if (button.dataset.goSheet === "reflection") startReflection(null);
+      } else if (button.dataset.goSheet === "newMatch") {
+        resetNewMatchDraft();
+        setView("newMatch");
+      } else if (button.dataset.goSheet === "reflection") {
+        reflectionMode = "list";
+        setView("reflection");
+      }
       else setView(button.dataset.goSheet);
-      showToast(button.dataset.goSheet === "evaluate" ? "새 평가를 시작합니다" : "개인 회고를 작성합니다");
+      showToast(button.dataset.goSheet === "evaluate" ? "경기 평가 리스트로 이동합니다" : button.dataset.goSheet === "newMatch" ? "새 경기를 추가합니다" : "회고 히스토리로 이동합니다");
     });
   });
   sheet.querySelectorAll("[data-toast-sheet]").forEach((button) => {
@@ -1409,14 +1486,17 @@ function openSheet(kind, payload = null) {
       showToast("프로필 프리셋을 적용했습니다");
     });
   });
-  sheet.querySelector("#sendFriendRequest")?.addEventListener("click", () => {
-    const input = sheet.querySelector("#friendSearch");
-    const name = input.value.trim() || "새 친구";
-    friends = [[name, "요청 보냄 · 수락 대기"], ...friends];
+  sheet.querySelectorAll("[data-add-friend]").forEach((button) => button.addEventListener("click", () => {
+    const friendUserId = button.dataset.addFriend;
+    window.PlaylogOfficialData?.addFriend?.({
+      userId: currentUserId,
+      friendUserId,
+      createdAt: new Date().toISOString(),
+    });
     renderFriends();
     closeSheet();
-    showToast("친구 요청을 보냈습니다");
-  });
+    showToast(`${userNames[friendUserId] || "친구"}님을 친구 목록에 추가했습니다`);
+  }));
 }
 
 function closeSheet() {
@@ -1549,6 +1629,7 @@ function renderStepper() {
 
 function enterEvaluationFlow(match) {
   evaluationMode = "flow";
+  selectedMatchId = match.id;
   const remaining = matchRemainingTargets(match);
   if (match.status === "published") {
     openMatchResultView("summary");
@@ -1556,12 +1637,15 @@ function enterEvaluationFlow(match) {
   }
   if (currentUserMatchState(match) === "평가완료") {
     loadAwardDraft();
-    const hasAwards = Boolean(
-      window.PlaylogOfficialData?.getMatchAwardVote?.(match.id, currentUserId, "pom")
-      && window.PlaylogOfficialData?.getMatchAwardVote?.(match.id, currentUserId, "next_star"),
-    );
     justCompletedAwards = false;
-    currentStep = hasAwards ? 7 : 6;
+    currentStep = 7;
+    setView("evaluate");
+    return;
+  }
+  if (currentUserMatchState(match) === "투표 필요") {
+    loadAwardDraft();
+    justCompletedAwards = false;
+    currentStep = 6;
     setView("evaluate");
     return;
   }
@@ -1578,6 +1662,7 @@ function enterEvaluationFlow(match) {
 function renderEvaluationList() {
   const pane = document.querySelector("#evaluationPane");
   const matches = currentUserMatches();
+  document.querySelector(".eval-target").hidden = true;
   document.querySelector("#currentTarget").textContent = "경기 선택";
   document.querySelector(".eval-target").classList.remove("pulse");
   document.querySelector("#stepTitle").textContent = "경기 평가 리스트";
@@ -1622,16 +1707,17 @@ function renderEvaluation() {
     renderEvaluationList();
     return;
   }
+  document.querySelector(".eval-target").hidden = false;
   const targetPlayers = evaluationTargetPlayers();
   const remainingIds = new Set(
-    (window.PlaylogOfficialData?.getRemainingEvaluationTargets?.(currentMatchId, currentUserId) || targetPlayers)
+    (window.PlaylogOfficialData?.getRemainingEvaluationTargets?.(selectedMatchId, currentUserId) || targetPlayers)
       .map((player) => player.userId),
   );
   const match = activeMatchRecord();
-  const remaining = window.PlaylogOfficialData?.getRemainingEvaluationTargets?.(currentMatchId, currentUserId) || [];
-  const storedPOMVote = window.PlaylogOfficialData?.getMatchAwardVote?.(currentMatchId, currentUserId, "pom")
-    || window.PlaylogOfficialData?.getPOMVote?.(currentMatchId, currentUserId);
-  const storedNextStarVote = window.PlaylogOfficialData?.getMatchAwardVote?.(currentMatchId, currentUserId, "next_star");
+  const remaining = window.PlaylogOfficialData?.getRemainingEvaluationTargets?.(selectedMatchId, currentUserId) || [];
+  const storedPOMVote = window.PlaylogOfficialData?.getMatchAwardVote?.(selectedMatchId, currentUserId, "pom")
+    || window.PlaylogOfficialData?.getPOMVote?.(selectedMatchId, currentUserId);
+  const storedNextStarVote = window.PlaylogOfficialData?.getMatchAwardVote?.(selectedMatchId, currentUserId, "next_star");
   const hasStoredAwards = Boolean(storedPOMVote && storedNextStarVote);
   const pomSelection = selectedPOMTargetId || storedPOMVote?.targetUserId || null;
   const nextStarSelection = selectedNextStarTargetId || storedNextStarVote?.targetUserId || null;
@@ -1639,7 +1725,7 @@ function renderEvaluation() {
   if (!selectedNextStarTargetId && nextStarSelection) selectedNextStarTargetId = nextStarSelection;
   if (!pomReason && storedPOMVote?.reason) pomReason = storedPOMVote.reason;
   if (!nextStarReason && storedNextStarVote?.reason) nextStarReason = storedNextStarVote.reason;
-  const isAwardStep = currentStep === 6 && Boolean(match) && remaining.length === 0
+  const isAwardStep = currentStep === 6 && Boolean(match) && isAwardVotingEnabled(match) && remaining.length === 0
     && !hasStoredAwards;
   const isJustCompletedAwardStep = currentStep >= 7 && justCompletedAwards;
   if (!targetPlayers.some((player) => player.name === selectedPlayer)) {
@@ -1679,14 +1765,14 @@ function renderEvaluation() {
       ${selectionActions()}`;
   } else if (currentStep === 5) {
     const previewCard = window.PlaylogEngine.generatePlayerMatchCard({
-      matchId: currentMatchId,
+      matchId: selectedMatchId,
       userId: selectedPlayerId(),
       evaluations: [buildEvaluation("evaluation:preview")],
     });
     pane.innerHTML = `<label class="field-label evaluation-comment"><span>이 선수 한 줄 평</span><textarea id="evaluationComment" rows="4" placeholder="${evaluationCommentPlaceholder}">${escapeHtml(overallComment)}</textarea></label><div class="self-result"><span>${selectedPlayer} 예상 OVR</span><strong>${previewCard.overallRating}</strong></div>${actions("이전", "평가 저장 완료")}`;
   } else if (isAwardStep) {
     const candidates = targetPlayers;
-    pane.innerHTML = `<div class="complete-card award-card"><h2>오늘 가장 인상 깊었던 선수</h2><p>POM은 OVR에 영향을 주지 않으며 결과 공개 시 함께 공개됩니다.</p><div class="selector-grid">${candidates.map((player) => `<button class="choice-card ${pomSelection === player.userId ? "selected" : ""}" data-pom-target="${player.userId}" type="button">${player.name}<br><small>선택하기</small></button>`).join("")}</div><label class="field-label award-reason"><span>POM 선정 이유</span><input id="pomReason" value="${escapeHtml(pomReason)}" placeholder="${pomReasonPlaceholder}" /></label><h2>다음 경기 주인공</h2><p>다음 경기에서 기대되는 선수를 참가자 중 한 명 선택해주세요.</p><div class="selector-grid">${candidates.map((player) => `<button class="choice-card ${nextStarSelection === player.userId ? "selected" : ""}" data-next-star-target="${player.userId}" type="button">${player.name}<br><small>선택하기</small></button>`).join("")}</div><label class="field-label award-reason"><span>다음 경기 주인공 선정 이유</span><input id="nextStarReason" value="${escapeHtml(nextStarReason)}" placeholder="${nextStarReasonPlaceholder}" /></label><button class="primary full" data-submit-awards type="button" ${pomSelection && nextStarSelection ? "" : "disabled"}>투표 저장</button><button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요? <small>선택</small></button></div>`;
+    pane.innerHTML = `<div class="complete-card award-card"><h2>오늘 가장 인상 깊었던 선수</h2><p>POM은 OVR에 영향을 주지 않으며 결과 공개 시 함께 공개됩니다.</p><div class="selector-grid">${candidates.map((player) => `<button class="choice-card ${pomSelection === player.userId ? "selected" : ""}" data-pom-target="${player.userId}" type="button">${player.name}<br><small>선택하기</small></button>`).join("")}</div><label class="field-label award-reason"><span>POM 선정 이유</span><input id="pomReason" value="${escapeHtml(pomReason)}" placeholder="${pomReasonPlaceholder}" /></label><h2>다음 경기 주인공</h2><p>다음 경기에서 기대되는 선수를 참가자 중 한 명 선택해주세요.</p><div class="selector-grid">${candidates.map((player) => `<button class="choice-card ${nextStarSelection === player.userId ? "selected" : ""}" data-next-star-target="${player.userId}" type="button">${player.name}<br><small>선택하기</small></button>`).join("")}</div><label class="field-label award-reason"><span>다음 경기 주인공 선정 이유</span><input id="nextStarReason" value="${escapeHtml(nextStarReason)}" placeholder="${nextStarReasonPlaceholder}" /></label><button class="primary full" data-submit-awards type="button" ${pomSelection && nextStarSelection ? "" : "disabled"}>투표 저장</button></div>`;
     pane.querySelectorAll("[data-pom-target]").forEach((button) => button.addEventListener("click", () => {
       selectedPOMTargetId = button.dataset.pomTarget;
       updateChoiceSelection(pane, "[data-pom-target]", button);
@@ -1706,7 +1792,7 @@ function renderEvaluation() {
       const cleanedNextStarReason = sanitizeOptionalText(nextStarReason, [nextStarReasonPlaceholder]);
       if (!storedPOMVote || storedPOMVote.targetUserId !== finalPomSelection || (storedPOMVote.reason || "") !== cleanedPomReason) {
         window.PlaylogOfficialData.saveMatchAwardVote({
-          matchId: currentMatchId,
+          matchId: selectedMatchId,
           voterUserId: currentUserId,
           targetUserId: finalPomSelection,
           type: "pom",
@@ -1716,7 +1802,7 @@ function renderEvaluation() {
       }
       if (!storedNextStarVote || storedNextStarVote.targetUserId !== finalNextStarSelection || (storedNextStarVote.reason || "") !== cleanedNextStarReason) {
         window.PlaylogOfficialData.saveMatchAwardVote({
-          matchId: currentMatchId,
+          matchId: selectedMatchId,
           voterUserId: currentUserId,
           targetUserId: finalNextStarSelection,
           type: "next_star",
@@ -1729,7 +1815,6 @@ function renderEvaluation() {
       currentStep = 7;
       renderEvaluation();
     });
-    pane.querySelector("[data-start-match-reflection]")?.addEventListener("click", () => startReflection(currentMatchId));
     return;
   } else {
     const resultReady = !match || match.status === "published";
@@ -1753,7 +1838,7 @@ function renderEvaluation() {
       if (resultReady) openMatchResultView("summary");
       else setView("home");
     });
-    pane.querySelector("[data-start-match-reflection]")?.addEventListener("click", () => startReflection(currentMatchId));
+    pane.querySelector("[data-start-match-reflection]")?.addEventListener("click", () => startReflection(selectedMatchId));
     return;
   }
 
@@ -1808,6 +1893,11 @@ function renderEvaluation() {
     overallComment = event.target.value;
   });
   pane.querySelector("[data-prev]")?.addEventListener("click", () => {
+    if (currentStep === 0) {
+      evaluationMode = "list";
+      renderEvaluation();
+      return;
+    }
     currentStep = Math.max(0, currentStep - 1);
     renderEvaluation();
   });
@@ -1872,7 +1962,7 @@ function renderTraitRatingFields(fields, selectedKeys, ratings, prefix) {
 function buildEvaluation(id) {
   return {
     id,
-    matchId: currentMatchId,
+    matchId: selectedMatchId,
     evaluatorUserId: currentUserId,
     targetUserId: selectedPlayerId(),
     selectedPosition,
@@ -2057,6 +2147,11 @@ function renderReflection() {
   pane.querySelector("#reflectionGoal")?.addEventListener("input", (event) => { reflectionGoal = event.target.value; });
   pane.querySelector("#reflectionMemo")?.addEventListener("input", (event) => { reflectionMemo = event.target.value; });
   pane.querySelector("[data-reflection-prev]")?.addEventListener("click", () => {
+    if (reflectionStep === 0) {
+      reflectionMode = "list";
+      renderReflection();
+      return;
+    }
     reflectionStep = Math.max(0, reflectionStep - 1);
     renderReflection();
   });
@@ -2153,6 +2248,119 @@ function openReflectionDetail(reflectionId) {
   overlay.hidden = false;
 }
 
+function renderNewMatch() {
+  if (!newMatchDraft) resetNewMatchDraft();
+  const pane = document.querySelector("#newMatchPane");
+  const candidates = matchParticipantCandidates();
+  if (!newMatchDraft.awardVotingTouched) {
+    newMatchDraft.awardVotingEnabled = newMatchDraft.participantIds.length >= 4;
+  }
+  pane.innerHTML = `
+    <div class="new-match-form">
+      <label>경기명<input id="newMatchTitle" value="${escapeHtml(newMatchDraft.title)}" placeholder="예: 상암 목요 풋살" /></label>
+      <label>날짜/시간<input id="newMatchDate" type="datetime-local" value="${escapeHtml(newMatchDraft.date)}" /></label>
+      <label>장소<input id="newMatchLocation" value="${escapeHtml(newMatchDraft.location)}" placeholder="예: 상암 풋살장" /></label>
+      <section class="new-match-section">
+        <strong>참가자 선택</strong>
+        <p>${candidates.length > 1 ? "친구 목록에서 참가자를 선택합니다. 현재 사용자는 기본 포함됩니다." : "친구를 추가하면 경기 참가자로 선택할 수 있습니다."}</p>
+        <div class="participant-select-grid">
+          ${candidates.map((candidate) => {
+            const selected = newMatchDraft.participantIds.includes(candidate.userId);
+            return `<button class="chip compact ${selected ? "selected" : ""}" data-new-match-participant="${candidate.userId}" type="button" ${candidate.locked ? "disabled" : ""}>${candidate.name}${candidate.locked ? " · 나" : ""}</button>`;
+          }).join("")}
+        </div>
+      </section>
+      <section class="new-match-section">
+        <strong>평가 마감 시간</strong>
+        <div class="deadline-select-grid">
+          ${[4, 6, 12, 24].map((hour) => `<button class="chip compact ${newMatchDraft.deadlineHours === hour ? "selected" : ""}" data-new-match-deadline="${hour}" type="button">${hour}시간</button>`).join("")}
+        </div>
+      </section>
+      <section class="new-match-section">
+        <div class="new-match-toggle-row">
+          <div>
+            <strong>POM / 다음 경기 주인공 투표 사용</strong>
+            <p>평가 완료 후 오늘의 POM과 다음 경기 주인공을 함께 선택합니다.</p>
+          </div>
+          <button class="toggle-pill ${newMatchDraft.awardVotingEnabled ? "on" : ""}" data-new-match-awards type="button">${newMatchDraft.awardVotingEnabled ? "ON" : "OFF"}</button>
+        </div>
+      </section>
+      <div class="eval-actions">
+        <button class="secondary" data-cancel-new-match type="button">취소</button>
+        <button class="primary" data-create-new-match type="button">경기 생성</button>
+      </div>
+    </div>
+  `;
+  pane.querySelector("#newMatchTitle")?.addEventListener("input", (event) => { newMatchDraft.title = event.target.value; });
+  pane.querySelector("#newMatchDate")?.addEventListener("input", (event) => { newMatchDraft.date = event.target.value; });
+  pane.querySelector("#newMatchLocation")?.addEventListener("input", (event) => { newMatchDraft.location = event.target.value; });
+  pane.querySelectorAll("[data-new-match-participant]").forEach((button) => button.addEventListener("click", () => {
+    const userId = button.dataset.newMatchParticipant;
+    if (userId === currentUserId) return;
+    newMatchDraft.participantIds = newMatchDraft.participantIds.includes(userId)
+      ? newMatchDraft.participantIds.filter((id) => id !== userId)
+      : [...newMatchDraft.participantIds, userId];
+    if (!newMatchDraft.awardVotingTouched) {
+      newMatchDraft.awardVotingEnabled = newMatchDraft.participantIds.length >= 4;
+    }
+    renderNewMatch();
+  }));
+  pane.querySelectorAll("[data-new-match-deadline]").forEach((button) => button.addEventListener("click", () => {
+    newMatchDraft.deadlineHours = Number(button.dataset.newMatchDeadline);
+    renderNewMatch();
+  }));
+  pane.querySelector("[data-new-match-awards]")?.addEventListener("click", () => {
+    newMatchDraft.awardVotingEnabled = !newMatchDraft.awardVotingEnabled;
+    newMatchDraft.awardVotingTouched = true;
+    renderNewMatch();
+  });
+  pane.querySelector("[data-cancel-new-match]")?.addEventListener("click", () => {
+    evaluationMode = "list";
+    setView("evaluate");
+  });
+  pane.querySelector("[data-create-new-match]")?.addEventListener("click", () => {
+    const title = newMatchDraft.title.trim();
+    const location = newMatchDraft.location.trim();
+    const date = fromDatetimeLocalValue(newMatchDraft.date);
+    if (!title) {
+      showToast("경기명을 입력해주세요.");
+      return;
+    }
+    if (!date) {
+      showToast("날짜/시간을 선택해주세요.");
+      return;
+    }
+    if (newMatchDraft.participantIds.length < 2) {
+      showToast("참가자를 최소 2명 이상 선택해주세요.");
+      return;
+    }
+    if (![4, 6, 12, 24].includes(newMatchDraft.deadlineHours)) {
+      showToast("평가 마감 시간을 다시 선택해주세요.");
+      return;
+    }
+    const id = `match:custom:${Date.now()}`;
+    const match = window.PlaylogOfficialData.createMatch({
+      id,
+      title,
+      date,
+      location,
+      participants: newMatchDraft.participantIds.map((userId) => ({
+        userId,
+        joinedAt: date,
+        evaluationCompleted: false,
+      })),
+      evaluationDeadlineHours: newMatchDraft.deadlineHours,
+      awardVotingEnabled: newMatchDraft.awardVotingEnabled,
+      status: "evaluating",
+    });
+    selectedMatchId = match.id;
+    newMatchDraft = null;
+    evaluationMode = "list";
+    showToast("새 경기가 추가되었습니다.");
+    setView("evaluate");
+  });
+}
+
 function renderCards() {
   document.querySelectorAll("[data-card-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.cardTab === activeCardTab);
@@ -2172,9 +2380,17 @@ function renderCards() {
 }
 
 function renderFriends() {
-  document.querySelector("#friendList").innerHTML = friends.map(([name, meta]) => `
-    <article><div><strong>${name}</strong><p>${meta}</p></div><button data-toast="${name} 카드 비교를 열었습니다" type="button">비교</button></article>
-  `).join("");
+  const list = friendUsers();
+  document.querySelector("#friendList").innerHTML = list.length
+    ? list.map((friend) => {
+      const card = userMatchCards(friend.userId)[0];
+      const position = positionLabels[card?.mainEvaluatedPosition]?.[0] || "최근 포지션 준비중";
+      const ovr = card?.overallRating ? `OVR ${card.overallRating}` : "분석 준비중";
+      const style = card?.playStyle || "함께 경기하면 분석이 쌓입니다";
+      return `<article><div><strong>${friend.name}</strong><p>${position} · ${ovr} · ${style}</p></div><button data-toast="${friend.name}님은 친구 상태입니다" type="button">친구</button></article>`;
+    }).join("")
+    : `<article><div><strong>친구가 아직 없습니다.</strong><p>친구를 추가하면 새 경기 참가자로 선택할 수 있어요.</p></div><button id="emptyFriendAdd" type="button">추가</button></article>`;
+  document.querySelector("#emptyFriendAdd")?.addEventListener("click", () => openSheet("friend"));
 }
 
 function setView(view) {
@@ -2185,6 +2401,7 @@ function setView(view) {
   window.scrollTo({ top: 0, behavior: "instant" });
   if (view === "home") renderHome();
   if (view === "evaluate") renderEvaluation();
+  if (view === "newMatch") renderNewMatch();
   if (view === "cards") renderCards();
   if (view === "matchResult") renderMatchResult();
   if (view === "reflection") renderReflection();
@@ -2275,3 +2492,4 @@ renderReflection();
 renderCards();
 renderFriends();
 bindInteractions();
+

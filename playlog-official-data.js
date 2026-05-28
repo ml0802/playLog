@@ -9,6 +9,13 @@
   const matchAwardVotes = [];
   const matchAwardTypes = ["pom", "next_star"];
   const selfReflections = [];
+  const friends = [
+    { userId, friendUserId: "user:minsu", status: "accepted", createdAt: "2026-05-20T09:00:00.000Z" },
+    { userId, friendUserId: "user:jihoon", status: "accepted", createdAt: "2026-05-20T09:05:00.000Z" },
+    { userId, friendUserId: "user:hyunwoo", status: "accepted", createdAt: "2026-05-20T09:10:00.000Z" },
+    { userId, friendUserId: "user:woojin", status: "accepted", createdAt: "2026-05-20T09:15:00.000Z" },
+    { userId, friendUserId: "user:sungmin", status: "accepted", createdAt: "2026-05-20T09:20:00.000Z" },
+  ];
   const baseCommon = {
     activity: 8, decision: 8, stablePass: 8, buildUp: 8, firstTouch: 7,
     dribbleImpact: 6, composure: 8, offTheBall: 7, concentration: 8, stamina: 7,
@@ -163,23 +170,26 @@
     location = "",
     participants = [],
     evaluationDeadlineHours = 12,
+    awardVotingEnabled,
     status = "evaluating",
   }) {
     const deadlineHours = evaluationDeadlineOptions.includes(evaluationDeadlineHours)
       ? evaluationDeadlineHours
       : 12;
+    const normalizedParticipants = participants.map((participant) => ({
+      userId: typeof participant === "string" ? participant : participant.userId,
+      joinedAt: typeof participant === "object" && participant.joinedAt ? participant.joinedAt : date,
+      evaluationCompleted: typeof participant === "object" && participant.evaluationCompleted === true,
+    }));
     const match = {
       id,
       title,
       date,
       location,
-      participants: participants.map((participant) => ({
-        userId: typeof participant === "string" ? participant : participant.userId,
-        joinedAt: typeof participant === "object" && participant.joinedAt ? participant.joinedAt : date,
-        evaluationCompleted: typeof participant === "object" && participant.evaluationCompleted === true,
-      })),
+      participants: normalizedParticipants,
       evaluationDeadlineHours: deadlineHours,
       evaluationDeadlineAt: calculateEvaluationDeadlineAt(date, deadlineHours),
+      awardVotingEnabled: typeof awardVotingEnabled === "boolean" ? awardVotingEnabled : normalizedParticipants.length >= 4,
       status,
       publishedAt: status === "published" ? date : null,
     };
@@ -191,6 +201,19 @@
 
   function managedMatch(match) {
     return matches.find((item) => item.id === match) || null;
+  }
+
+  function addFriend({ userId: ownerUserId, friendUserId, createdAt = new Date().toISOString() }) {
+    const existing = friends.find((friend) =>
+      friend.userId === ownerUserId && friend.friendUserId === friendUserId,
+    );
+    if (existing) {
+      existing.status = "accepted";
+      return existing;
+    }
+    const friend = { userId: ownerUserId, friendUserId, status: "accepted", createdAt };
+    friends.push(friend);
+    return friend;
   }
 
   function activeEvaluationsForMatch(match) {
@@ -469,38 +492,48 @@
   }
 
   const activeEvaluationMatchId = "match:sangam-evaluating-2026-05-28";
-  ["user:minsu", "user:jihoon", "user:hyunwoo"].forEach((evaluatorUserId, evaluatorIndex) => {
+  const qaAwardOnMatchId = "match:qa-award-on-2026-05-29";
+  const qaAwardOffMatchId = "match:qa-award-off-2026-05-29";
+  function seedLastEvaluatorQA(match, minuteOffset = 0) {
     ["user:seunghyun", "user:minsu", "user:jihoon", "user:hyunwoo"]
-      .filter((targetUserId) => targetUserId !== evaluatorUserId)
-      .forEach((targetUserId, targetIndex) => {
-        const evaluationId = `evaluation:qa:${evaluatorUserId}:${targetUserId}`;
-        evaluations.push({
-          id: evaluationId,
-          matchId: activeEvaluationMatchId,
-          evaluatorUserId,
-          targetUserId,
-          selectedPosition: "dm",
-          overallComment: "중원에서 활동량과 공수 연결이 안정적이었다.",
-          createdAt: `2026-05-28T09:${10 + evaluatorIndex}${targetIndex}:00.000Z`,
-          version: 1,
-          isActive: true,
-          updatedAt: `2026-05-28T09:${10 + evaluatorIndex}${targetIndex}:00.000Z`,
-          scores: scores(evaluationId, "dm", { activity: 8, stamina: 8, decision: 7 }, {
-            interception: 7,
-            deepBuildUp: 8,
-            pressureResistance: 8,
-            defensiveCover: 7,
-            pressingTiming: 8,
-          }),
-          traits: [
-            { id: `${evaluationId}:trait:aggression`, evaluationId, key: "aggression", score: 8 },
-            { id: `${evaluationId}:trait:leadership`, evaluationId, key: "leadership", score: 7 },
-            { id: `${evaluationId}:trait:winningMentality`, evaluationId, key: "winningMentality", score: 8 },
-          ],
-          highlights: [{ id: `${evaluationId}:highlight:physical`, evaluationId, key: "physical" }],
-        });
+      .filter((evaluatorUserId) => evaluatorUserId !== "user:seunghyun")
+      .forEach((evaluatorUserId, evaluatorIndex) => {
+        ["user:seunghyun", "user:minsu", "user:jihoon", "user:hyunwoo"]
+          .filter((targetUserId) => targetUserId !== evaluatorUserId)
+          .forEach((targetUserId, targetIndex) => {
+            const evaluationId = `evaluation:qa:${match}:${evaluatorUserId}:${targetUserId}`;
+            const createdAt = `2026-05-28T09:${String(10 + minuteOffset + evaluatorIndex).padStart(2, "0")}:${String(targetIndex).padStart(2, "0")}.000Z`;
+            evaluations.push({
+              id: evaluationId,
+              matchId: match,
+              evaluatorUserId,
+              targetUserId,
+              selectedPosition: "dm",
+              overallComment: "중원에서 활동량과 공수 연결이 안정적이었다.",
+              createdAt,
+              version: 1,
+              isActive: true,
+              updatedAt: createdAt,
+              scores: scores(evaluationId, "dm", { activity: 8, stamina: 8, decision: 7 }, {
+                interception: 7,
+                deepBuildUp: 8,
+                pressureResistance: 8,
+                defensiveCover: 7,
+                pressingTiming: 8,
+              }),
+              traits: [
+                { id: `${evaluationId}:trait:aggression`, evaluationId, key: "aggression", score: 8 },
+                { id: `${evaluationId}:trait:leadership`, evaluationId, key: "leadership", score: 7 },
+                { id: `${evaluationId}:trait:winningMentality`, evaluationId, key: "winningMentality", score: 8 },
+              ],
+              highlights: [{ id: `${evaluationId}:highlight:physical`, evaluationId, key: "physical" }],
+            });
+          });
       });
-  });
+  }
+  seedLastEvaluatorQA(activeEvaluationMatchId, 0);
+  seedLastEvaluatorQA(qaAwardOnMatchId, 10);
+  seedLastEvaluatorQA(qaAwardOffMatchId, 20);
   createMatch({
     id: activeEvaluationMatchId,
     title: "상암 목요일 풋살",
@@ -513,12 +546,42 @@
       { userId: "user:hyunwoo", joinedAt: "2026-05-27T13:16:00.000Z" },
     ],
     evaluationDeadlineHours: 12,
+    awardVotingEnabled: true,
+  });
+  createMatch({
+    id: qaAwardOnMatchId,
+    title: "QA 투표 ON 경기",
+    date: "2026-05-29T10:00:00.000Z",
+    location: "QA 테스트 풋살장",
+    participants: [
+      { userId: "user:seunghyun", joinedAt: "2026-05-29T09:50:00.000Z" },
+      { userId: "user:minsu", joinedAt: "2026-05-29T09:51:00.000Z" },
+      { userId: "user:jihoon", joinedAt: "2026-05-29T09:52:00.000Z" },
+      { userId: "user:hyunwoo", joinedAt: "2026-05-29T09:53:00.000Z" },
+    ],
+    evaluationDeadlineHours: 12,
+    awardVotingEnabled: true,
+  });
+  createMatch({
+    id: qaAwardOffMatchId,
+    title: "QA 투표 OFF 경기",
+    date: "2026-05-29T09:30:00.000Z",
+    location: "QA 테스트 풋살장",
+    participants: [
+      { userId: "user:seunghyun", joinedAt: "2026-05-29T09:20:00.000Z" },
+      { userId: "user:minsu", joinedAt: "2026-05-29T09:21:00.000Z" },
+      { userId: "user:jihoon", joinedAt: "2026-05-29T09:22:00.000Z" },
+      { userId: "user:hyunwoo", joinedAt: "2026-05-29T09:23:00.000Z" },
+    ],
+    evaluationDeadlineHours: 12,
+    awardVotingEnabled: false,
   });
 
   root.PlaylogOfficialData = {
     evaluationDeadlineOptions,
     activeEvaluationMatchId,
     matches,
+    friends,
     matchAwardVotes,
     get pomVotes() { return matchAwardVotes.filter((vote) => vote.type === "pom"); },
     evaluations,
@@ -531,6 +594,7 @@
     generateMonthlyCardFor,
     calculateEvaluationDeadlineAt,
     createMatch,
+    addFriend,
     getEvaluationTargets,
     getRemainingEvaluationTargets,
     getEvaluationProgress,
