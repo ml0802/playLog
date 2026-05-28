@@ -91,6 +91,7 @@ assert.deepEqual(store.pomVotes.filter((vote) => vote.matchId === uxMatch.id), [
   voterUserId: "user:ux-a",
   targetUserId: "user:ux-c",
   type: "pom",
+  reason: "",
   createdAt: "2026-05-28T06:40:00.000Z",
 }]);
 store.saveMatchAwardVote({
@@ -149,6 +150,7 @@ assert.deepEqual(store.savePOMVote({
   voterUserId: "user:a",
   targetUserId: "user:b",
   type: "pom",
+  reason: "",
   createdAt: "2026-05-28T01:20:00.000Z",
 });
 assert.equal(store.pomVotes.filter((vote) => vote.matchId === completionMatch.id).length, 1);
@@ -168,8 +170,10 @@ store.saveMatchAwardVote({
   voterUserId: "user:a",
   targetUserId: "user:b",
   type: "next_star",
+  reason: "다음 경기에서 기대되는 움직임",
   createdAt: "2026-05-28T01:30:00.000Z",
 });
+assert.equal(store.getMatchAwardVote(completionMatch.id, "user:a", "next_star").reason, "다음 경기에서 기대되는 움직임");
 assert.equal(store.calculateMatchAward(completionMatch.id, "next_star"), null);
 
 const publishedTargetCard = store.saveEvaluation(evaluation(

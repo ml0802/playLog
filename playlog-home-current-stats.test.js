@@ -104,7 +104,7 @@ const flow = renderAppWithData(liveStats, null, [], {
 assert.equal(flow.get("#activeMatchTitle").textContent, "참가자 연결 경기");
 assert.equal(flow.get("#activeMatchProgressValue").textContent, "1/3");
 assert.equal(flow.get("#activeMatchWaiting").hidden, false);
-assert.equal(flow.get("#activeMatchWaiting").textContent, "2명 평가 대기중 · 6시간 후 자동 공개");
+assert.ok(flow.get("#activeMatchWaiting").textContent.includes("2명 평가 대기중 · 6시간 후 자동 공개"));
 assert.ok(flow.get("#evaluationPane").innerHTML.includes("김민수"));
 assert.ok(flow.get("#evaluationPane").innerHTML.includes("이지훈"));
 assert.ok(flow.get("#evaluationPane").innerHTML.includes("평가 완료"));

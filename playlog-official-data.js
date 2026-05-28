@@ -73,6 +73,11 @@
       generatedAt: "2026-05-23T15:00:00.000Z",
     }),
   ];
+  Object.assign(playerMatchCards[0], {
+    mainEvaluatedPosition: "dm",
+    playStyle: "활동형 올라운더",
+    playStyleCode: "Box To Box Midfielder · BBM",
+  });
   const playerCurrentStats = [
     engine.generatePlayerCurrentStats({
       userId,
@@ -80,6 +85,10 @@
       generatedAt: "2026-05-23T15:00:00.000Z",
     }),
   ];
+  Object.assign(playerCurrentStats[0], {
+    currentPlayStyle: "활동형 올라운더",
+    currentMainPosition: "dm",
+  });
   const playerMonthlyCards = [
     engine.generatePlayerMonthlyCard({
       userId,
@@ -88,6 +97,10 @@
       generatedAt: "2026-05-23T15:00:00.000Z",
     }),
   ];
+  Object.assign(playerMonthlyCards[0], {
+    mainPlayStyle: "활동형 올라운더",
+    mainPosition: "dm",
+  });
 
   function generateCardFor(match, targetUserId, generatedAt) {
     const previousCards = playerMatchCards.filter((card) =>
@@ -272,6 +285,7 @@
     voterUserId,
     targetUserId,
     type,
+    reason = "",
     createdAt = new Date().toISOString(),
   }) {
     if (!matchAwardTypes.includes(type)) throw new Error("지원하지 않는 경기 투표 타입입니다.");
@@ -293,7 +307,7 @@
     if (record.status === "published" && existingIndex >= 0) {
       throw new Error("공개된 경기의 투표는 수정할 수 없습니다.");
     }
-    const vote = { matchId: voteMatchId, voterUserId, targetUserId, type, createdAt };
+    const vote = { matchId: voteMatchId, voterUserId, targetUserId, type, reason: String(reason).trim(), createdAt };
     if (existingIndex >= 0) matchAwardVotes[existingIndex] = vote;
     else matchAwardVotes.push(vote);
     return vote;
@@ -455,6 +469,38 @@
   }
 
   const activeEvaluationMatchId = "match:sangam-evaluating-2026-05-28";
+  ["user:minsu", "user:jihoon", "user:hyunwoo"].forEach((evaluatorUserId, evaluatorIndex) => {
+    ["user:seunghyun", "user:minsu", "user:jihoon", "user:hyunwoo"]
+      .filter((targetUserId) => targetUserId !== evaluatorUserId)
+      .forEach((targetUserId, targetIndex) => {
+        const evaluationId = `evaluation:qa:${evaluatorUserId}:${targetUserId}`;
+        evaluations.push({
+          id: evaluationId,
+          matchId: activeEvaluationMatchId,
+          evaluatorUserId,
+          targetUserId,
+          selectedPosition: "dm",
+          overallComment: "중원에서 활동량과 공수 연결이 안정적이었다.",
+          createdAt: `2026-05-28T09:${10 + evaluatorIndex}${targetIndex}:00.000Z`,
+          version: 1,
+          isActive: true,
+          updatedAt: `2026-05-28T09:${10 + evaluatorIndex}${targetIndex}:00.000Z`,
+          scores: scores(evaluationId, "dm", { activity: 8, stamina: 8, decision: 7 }, {
+            interception: 7,
+            deepBuildUp: 8,
+            pressureResistance: 8,
+            defensiveCover: 7,
+            pressingTiming: 8,
+          }),
+          traits: [
+            { id: `${evaluationId}:trait:aggression`, evaluationId, key: "aggression", score: 8 },
+            { id: `${evaluationId}:trait:leadership`, evaluationId, key: "leadership", score: 7 },
+            { id: `${evaluationId}:trait:winningMentality`, evaluationId, key: "winningMentality", score: 8 },
+          ],
+          highlights: [{ id: `${evaluationId}:highlight:physical`, evaluationId, key: "physical" }],
+        });
+      });
+  });
   createMatch({
     id: activeEvaluationMatchId,
     title: "상암 목요일 풋살",
