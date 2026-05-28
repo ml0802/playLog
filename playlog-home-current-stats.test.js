@@ -79,9 +79,9 @@ assert.equal(live.get("#homePositionBadge").textContent, "FR");
 assert.equal(live.get("#homePlayType").textContent, "연결형 프리롤");
 assert.equal(live.get("#homePlayTypeSub").textContent, "Link Playmaker");
 assert.ok(live.get("#homeRadar").innerHTML.includes("83"));
-assert.ok(live.get("#positionGrid").innerHTML.includes("공미 · CAM"));
-assert.ok(live.get("#positionGrid").innerHTML.includes("프리롤 · FR"));
-assert.ok(!live.get("#positionGrid").innerHTML.includes("수비 · CB"));
+assert.ok(live.get("#cardList").innerHTML.includes("MATCH CARD"));
+assert.ok(live.get("#cardList").innerHTML.includes("상암 목요일 풋살"));
+assert.ok(live.get("#cardList").innerHTML.includes("OVR 82"));
 
 const flow = renderAppWithData(liveStats, null, [], {
   match: {
@@ -105,10 +105,10 @@ assert.equal(flow.get("#activeMatchTitle").textContent, "참가자 연결 경기
 assert.equal(flow.get("#activeMatchProgressValue").textContent, "1/3");
 assert.equal(flow.get("#activeMatchWaiting").hidden, false);
 assert.ok(flow.get("#activeMatchWaiting").textContent.includes("2명 평가 대기중 · 6시간 후 자동 공개"));
-assert.ok(flow.get("#evaluationPane").innerHTML.includes("김민수"));
-assert.ok(flow.get("#evaluationPane").innerHTML.includes("이지훈"));
-assert.ok(flow.get("#evaluationPane").innerHTML.includes("평가 완료"));
-assert.ok(!flow.get("#evaluationPane").innerHTML.includes("박현우"));
+assert.equal(flow.get("#stepTitle").textContent, "경기 평가 리스트");
+assert.ok(flow.get("#evaluationPane").innerHTML.includes("참가자 연결 경기"));
+assert.ok(flow.get("#evaluationPane").innerHTML.includes("진행중"));
+assert.ok(flow.get("#evaluationPane").innerHTML.includes("평가 진행"));
 
 const recent = renderAppWithData(liveStats, [
   { userId: "user:other", matchId: "match:other", generatedAt: "2026-05-30T00:00:00.000Z", overallRating: 99, overallChange: 9, playStyle: "무관", mainEvaluatedPosition: "attack" },
@@ -119,9 +119,13 @@ const recent = renderAppWithData(liveStats, [
 ]);
 const recentHtml = recent.get("#recentMatches").innerHTML;
 assert.ok(recentHtml.indexOf("match:newest") < recentHtml.indexOf("상암 목요일 풋살"));
-assert.ok(recentHtml.includes("2026.05.27 · 공미 · 창의형 플레이메이커"));
-assert.ok(recentHtml.includes("OVR 80 -1"));
-assert.ok(recentHtml.includes("OVR 82 +4"));
+assert.ok(recentHtml.includes("2026.05.27"));
+assert.ok(recentHtml.includes("공미 · CAM"));
+assert.ok(recentHtml.includes("창의형 플레이메이커"));
+assert.ok(recentHtml.includes("OVR 80"));
+assert.ok(recentHtml.includes("-1"));
+assert.ok(recentHtml.includes("OVR 82"));
+assert.ok(recentHtml.includes("+4"));
 assert.ok(!recentHtml.includes("match:oldest-hidden"));
 assert.ok(!recentHtml.includes("match:other"));
 
@@ -164,14 +168,15 @@ const monthly = renderAppWithData(liveStats, null, [
     strengthsSummary: [],
   },
 ]);
-assert.equal(monthly.get("#homeMonthlyKicker").textContent, "SEASON CARD · 2026-05");
+assert.equal(monthly.get("#homeMonthlyKicker").textContent, "MONTHLY CARD · 2026년 5월 평균");
 assert.equal(monthly.get("#homeMonthlyTitle").textContent, "연결형 프리롤");
 assert.equal(monthly.get("#homeMonthlyMeta").hidden, false);
 assert.ok(monthly.get("#homeMonthlyMeta").innerHTML.includes("82"));
 assert.ok(monthly.get("#homeMonthlyMeta").innerHTML.includes("지난달 대비 +6"));
 assert.ok(monthly.get("#homeMonthlyMeta").innerHTML.includes("프리롤"));
 assert.ok(monthly.get("#homeMonthlyMeta").innerHTML.includes("5경기 기준"));
-assert.ok(monthly.get("#homeMonthlyRadar").innerHTML.includes("84"));
+assert.equal(monthly.get("#homeMonthlyRadar").hidden, true);
+assert.equal(monthly.get("#homeMonthlyRadar").innerHTML, "");
 assert.ok(monthly.get("#homeMonthlyStrengths").innerHTML.includes("안정적 패스"));
 assert.ok(monthly.get("#homeMonthlyStrengths").innerHTML.includes("공간 연결"));
 assert.ok(monthly.get("#homeMonthlyStrengths").innerHTML.includes("빌드업 능력"));
@@ -222,7 +227,7 @@ const analysis = renderAppWithData(liveStats, [
 ]);
 analysis.get("#officialCard").listeners.click();
 const analysisHtml = analysis.get("#sheet").innerHTML;
-assert.equal(analysis.get(".growth-read small").textContent, "MATCH ANALYSIS");
+assert.equal(analysis.get(".growth-read small").textContent, "CURRENT FORM ANALYSIS");
 assert.equal(analysis.get(".growth-read strong").textContent, "상승: 빌드업 능력 +3 · 안정적 패스 +2.5 · 경기 조율 +2");
 assert.equal(analysis.get(".growth-read p").textContent, "하락: 집중력 -3 · 퍼스트터치 -2.5 · 침착성 -2");
 assert.ok(analysisHtml.includes("상승 스탯 TOP 3"));
@@ -271,12 +276,12 @@ assert.equal(amLive.get("#homePosition").textContent, "공미 · CAM");
 assert.equal(amLive.get("#homePositionBadge").textContent, "CAM");
 
 const fallback = renderAppWithData(null);
-assert.equal(fallback.get("#homeOvr").textContent, 78);
-assert.equal(fallback.get(".ovr-line .rise").hidden, false);
+assert.equal(fallback.get("#homeOvr").textContent, "-");
+assert.equal(fallback.get(".ovr-line .rise").hidden, true);
 assert.ok(fallback.get("#homeRadar").innerHTML.includes("활동성"));
 assert.ok(fallback.get("#recentMatches").innerHTML.includes("용산 토요 풋살"));
-assert.ok(fallback.get("#evaluationPane").innerHTML.includes("김민수"));
-assert.ok(fallback.get("#evaluationPane").innerHTML.includes("최성민"));
+assert.equal(fallback.get("#stepTitle").textContent, "경기 평가 리스트");
+assert.ok(fallback.get("#evaluationPane").innerHTML.includes("상암 목요일 풋살"));
 assert.equal(fallback.has("#homeMonthlyMeta"), false);
 assert.equal(fallback.has("#homeMonthlyRadar"), false);
 fallback.get("#officialCard").listeners.click();

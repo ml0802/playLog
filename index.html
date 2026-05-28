@@ -30,7 +30,7 @@
               <span class="edit-avatar">변경</span>
             </button>
             <div class="profile-copy">
-              <p class="card-kicker">MY PLAYER</p>
+              <p class="card-kicker" id="homeCardKicker">CURRENT FORM</p>
               <h2 id="profile-title">승현</h2>
               <div class="role-row"><small>포지션</small><strong id="homePosition">프리롤 · FR</strong></div>
               <div class="play-identity" id="playIdentity">
@@ -48,7 +48,7 @@
           </div>
           <div class="ability-head">
             <strong>핵심 능력 분석</strong>
-            <span>최근 4경기 기준</span>
+            <span id="homeFormBasis">최근 4경기 기준</span>
           </div>
           <div class="home-radar" id="homeRadar" aria-label="활동성, 게임 센스, 패스, 볼 컨트롤, 움직임, 멘탈 능력 분석"></div>
           <div class="growth-read">
@@ -121,31 +121,13 @@
 
       <section class="content-view" data-view="cards">
         <div class="section-head">
-          <h2>공식 선수카드</h2>
-          <button type="button" data-go="reflection">자가 회고 보기 ›</button>
+          <h2>카드</h2>
         </div>
-        <button class="analysis-card" id="officialCard" type="button">
-          <div class="analysis-top">
-            <div class="portrait tall" aria-hidden="true"><span>10</span></div>
-            <div>
-              <p class="pill">POM</p>
-              <h2>김민수</h2>
-              <p>CAM · 프리롤</p>
-              <strong class="mega">78 <em>+3</em></strong>
-              <small>창의형 플레이메이커 · Advanced Playmaker</small>
-            </div>
-          </div>
-          <div class="change-strip">
-            <span>패스 +2</span><span>멘탈 +1</span><span>활동성 +1</span>
-          </div>
-          <div class="radar-large" id="cardRadar"></div>
-        </button>
-        <h2 class="section-title">포지션 적응도</h2>
-        <div class="position-grid" id="positionGrid"></div>
-        <h2 class="section-title">플레이 스타일 태그</h2>
-        <div class="style-tags" id="styleTags"></div>
-        <h2 class="section-title">익명 한 줄 평</h2>
-        <div class="quote-list" id="quotes"></div>
+        <div class="card-segments" aria-label="카드 종류">
+          <button class="active" data-card-tab="match" type="button">경기 카드</button>
+          <button data-card-tab="monthly" type="button">월 카드</button>
+        </div>
+        <div class="card-list" id="cardList"></div>
       </section>
 
       <section class="content-view" data-view="reflection">
@@ -160,6 +142,10 @@
           <div id="reflectionPane"></div>
           <div class="reflection-history" id="reflectionHistory"></div>
         </article>
+      </section>
+
+      <section class="content-view match-result-view" data-view="matchResult">
+        <div id="matchResultPane"></div>
       </section>
 
       <section class="content-view" data-view="friends">
