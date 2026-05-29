@@ -9,12 +9,25 @@
   const matchAwardVotes = [];
   const matchAwardTypes = ["pom", "next_star"];
   const selfReflections = [];
+  const users = [
+    { id: "user:seunghyun", playlogId: "seunghyun", password: "1234", name: "이승현", nickname: "승현", status: "approved", role: "admin", mainPosition: "dm", preferredRole: "활동형 올라운더", profilePreset: "cdm-3", bio: "중원에서 연결과 압박을 함께 가져가는 플레이어", createdAt: "2026-05-20T08:00:00.000Z", approvedAt: "2026-05-20T08:05:00.000Z" },
+    { id: "user:minsu", playlogId: "minsu10", password: "1234", name: "김민수", nickname: "김민수", status: "approved", role: "user", mainPosition: "am", preferredRole: "창의형 플레이메이커", profilePreset: "cam-0", bio: "찬스 메이킹을 즐기는 공미", createdAt: "2026-05-20T08:10:00.000Z", approvedAt: "2026-05-20T08:15:00.000Z" },
+    { id: "user:jihoon", playlogId: "jihoon10", password: "1234", name: "이지훈", nickname: "이지훈", status: "approved", role: "user", mainPosition: "free", preferredRole: "연결형 플레이메이커", profilePreset: "free-1", bio: "흐름을 이어주는 프리롤", createdAt: "2026-05-20T08:20:00.000Z", approvedAt: "2026-05-20T08:25:00.000Z" },
+    { id: "user:hyunwoo", playlogId: "hyunwoo10", password: "1234", name: "박현우", nickname: "박현우", status: "approved", role: "user", mainPosition: "defense", preferredRole: "빌드업형 수비수", profilePreset: "defense-1", bio: "차분하게 빌드업을 시작하는 수비수", createdAt: "2026-05-20T08:30:00.000Z", approvedAt: "2026-05-20T08:35:00.000Z" },
+    { id: "user:woojin", playlogId: "woojin10", password: "1234", name: "정우진", nickname: "정우진", status: "approved", role: "user", mainPosition: "attack", preferredRole: "침투형 공격수", profilePreset: "attack-0", bio: "라인 뒤 공간을 노리는 공격수", createdAt: "2026-05-20T08:40:00.000Z", approvedAt: "2026-05-20T08:45:00.000Z" },
+    { id: "user:sungmin", playlogId: "sungmin10", password: "1234", name: "최성민", nickname: "최성민", status: "approved", role: "user", mainPosition: "dm", preferredRole: "압박형 미드필더", profilePreset: "cdm-1", bio: "활동량과 압박으로 팀 밸런스를 잡는 선수", createdAt: "2026-05-20T08:50:00.000Z", approvedAt: "2026-05-20T08:55:00.000Z" },
+    { id: "user:rookie-demo", playlogId: "rookie10", password: "1234", name: "김루키", nickname: "루키", status: "approved", role: "user", mainPosition: "attack", preferredRole: "침투형 골게터", profilePreset: "attack-0", bio: "PLAYLOG를 체험 중인 루키입니다.", createdAt: "2026-05-29T09:00:00.000Z", approvedAt: "2026-05-29T09:01:00.000Z" },
+    { id: "user:qa-pending", playlogId: "pending10", password: "1234", name: "QA 대기", nickname: "테스트루키", status: "pending", role: "user", mainPosition: "free", preferredRole: "연결형 플레이메이커", profilePreset: "free-1", bio: "승인/친구 추가 QA를 위한 대기 유저", createdAt: "2026-05-29T09:00:00.000Z", approvedAt: null },
+  ];
   const friends = [
     { userId, friendUserId: "user:minsu", status: "accepted", createdAt: "2026-05-20T09:00:00.000Z" },
     { userId, friendUserId: "user:jihoon", status: "accepted", createdAt: "2026-05-20T09:05:00.000Z" },
     { userId, friendUserId: "user:hyunwoo", status: "accepted", createdAt: "2026-05-20T09:10:00.000Z" },
     { userId, friendUserId: "user:woojin", status: "accepted", createdAt: "2026-05-20T09:15:00.000Z" },
     { userId, friendUserId: "user:sungmin", status: "accepted", createdAt: "2026-05-20T09:20:00.000Z" },
+    { userId: "user:rookie-demo", friendUserId: "user:minsu", status: "accepted", createdAt: "2026-05-29T09:10:00.000Z" },
+    { userId: "user:rookie-demo", friendUserId: "user:jihoon", status: "accepted", createdAt: "2026-05-29T09:11:00.000Z" },
+    { userId: "user:rookie-demo", friendUserId: "user:hyunwoo", status: "accepted", createdAt: "2026-05-29T09:12:00.000Z" },
   ];
   const baseCommon = {
     activity: 8, decision: 8, stablePass: 8, buildUp: 8, firstTouch: 7,
@@ -70,6 +83,70 @@
     overallRating: 78,
     radarData: { activity: 73, gameSense: 76, pass: 79, ballControl: 70, movement: 70, mentality: 78 },
   };
+  const rookieCardMatchId1 = "match:rookie-demo-2026-05-18";
+  const rookieCardMatchId2 = "match:rookie-demo-2026-05-25";
+  const rookieEvaluations = [
+    {
+      id: "evaluation:rookie:1", matchId: rookieCardMatchId1, evaluatorUserId: "user:minsu", targetUserId: "user:rookie-demo", selectedPosition: "attack",
+      overallComment: "침투 타이밍이 좋아서 공격 흐름이 살아났다.", createdAt: "2026-05-18T12:00:00.000Z",
+      version: 1, isActive: true, updatedAt: "2026-05-18T12:00:00.000Z",
+      scores: scores("evaluation:rookie:1", "attack", { activity: 8, offTheBall: 8, dribbleImpact: 7 }, { finishing: 8, attackingPositioning: 8, attackingLinkUp: 7, frontPressure: 7, ballKeeping: 7 }),
+      traits: [
+        { id: "trait:rookie:1:aggression", evaluationId: "evaluation:rookie:1", key: "aggression", score: 8 },
+        { id: "trait:rookie:1:boldness", evaluationId: "evaluation:rookie:1", key: "boldness", score: 8 },
+      ],
+      highlights: [{ id: "highlight:rookie:1:pace", evaluationId: "evaluation:rookie:1", key: "pace" }],
+    },
+    {
+      id: "evaluation:rookie:2", matchId: rookieCardMatchId1, evaluatorUserId: "user:jihoon", targetUserId: "user:rookie-demo", selectedPosition: "attack",
+      overallComment: "라인 뒤로 빠지는 움직임이 눈에 띄었다.", createdAt: "2026-05-18T12:05:00.000Z",
+      version: 1, isActive: true, updatedAt: "2026-05-18T12:05:00.000Z",
+      scores: scores("evaluation:rookie:2", "attack", { offTheBall: 8, stamina: 8 }, { finishing: 7, attackingPositioning: 8, attackingLinkUp: 7, frontPressure: 8, ballKeeping: 6 }),
+      traits: [{ id: "trait:rookie:2:anticipation", evaluationId: "evaluation:rookie:2", key: "anticipation", score: 8 }],
+      highlights: [{ id: "highlight:rookie:2:agility", evaluationId: "evaluation:rookie:2", key: "agility" }],
+    },
+    {
+      id: "evaluation:rookie:3", matchId: rookieCardMatchId2, evaluatorUserId: "user:minsu", targetUserId: "user:rookie-demo", selectedPosition: "attack",
+      overallComment: "결정력과 전방 압박이 지난 경기보다 좋아졌다.", createdAt: "2026-05-25T12:00:00.000Z",
+      version: 1, isActive: true, updatedAt: "2026-05-25T12:00:00.000Z",
+      scores: scores("evaluation:rookie:3", "attack", { activity: 8, decision: 8, offTheBall: 9, stamina: 8 }, { finishing: 9, attackingPositioning: 9, attackingLinkUp: 7, frontPressure: 8, ballKeeping: 7 }),
+      traits: [
+        { id: "trait:rookie:3:aggression", evaluationId: "evaluation:rookie:3", key: "aggression", score: 9 },
+        { id: "trait:rookie:3:boldness", evaluationId: "evaluation:rookie:3", key: "boldness", score: 9 },
+      ],
+      highlights: [{ id: "highlight:rookie:3:pace", evaluationId: "evaluation:rookie:3", key: "pace" }],
+    },
+    {
+      id: "evaluation:rookie:4", matchId: rookieCardMatchId2, evaluatorUserId: "user:hyunwoo", targetUserId: "user:rookie-demo", selectedPosition: "attack",
+      overallComment: "득점 위치를 잡는 감각이 좋았다.", createdAt: "2026-05-25T12:05:00.000Z",
+      version: 1, isActive: true, updatedAt: "2026-05-25T12:05:00.000Z",
+      scores: scores("evaluation:rookie:4", "attack", { composure: 8, offTheBall: 9 }, { finishing: 8, attackingPositioning: 9, attackingLinkUp: 8, frontPressure: 8, ballKeeping: 7 }),
+      traits: [{ id: "trait:rookie:4:anticipation", evaluationId: "evaluation:rookie:4", key: "anticipation", score: 9 }],
+      highlights: [{ id: "highlight:rookie:4:ballControl", evaluationId: "evaluation:rookie:4", key: "ballControl" }],
+    },
+  ];
+  evaluations.push(...rookieEvaluations);
+  const rookieCard1 = engine.generatePlayerMatchCard({
+    matchId: rookieCardMatchId1,
+    userId: "user:rookie-demo",
+    evaluations,
+    generatedAt: "2026-05-18T13:00:00.000Z",
+  });
+  Object.assign(rookieCard1, {
+    playStyle: "침투형 골게터",
+    playStyleCode: "Advanced Forward · AF",
+  });
+  const rookieCard2 = engine.generatePlayerMatchCard({
+    matchId: rookieCardMatchId2,
+    userId: "user:rookie-demo",
+    evaluations,
+    previousCards: [rookieCard1],
+    generatedAt: "2026-05-25T13:00:00.000Z",
+  });
+  Object.assign(rookieCard2, {
+    playStyle: "침투형 골게터",
+    playStyleCode: "Advanced Forward · AF",
+  });
 
   const playerMatchCards = [
     engine.generatePlayerMatchCard({
@@ -79,6 +156,8 @@
       previousCard,
       generatedAt: "2026-05-23T15:00:00.000Z",
     }),
+    rookieCard1,
+    rookieCard2,
   ];
   Object.assign(playerMatchCards[0], {
     mainEvaluatedPosition: "dm",
@@ -91,10 +170,19 @@
       cards: playerMatchCards,
       generatedAt: "2026-05-23T15:00:00.000Z",
     }),
+    engine.generatePlayerCurrentStats({
+      userId: "user:rookie-demo",
+      cards: playerMatchCards,
+      generatedAt: "2026-05-25T13:00:00.000Z",
+    }),
   ];
   Object.assign(playerCurrentStats[0], {
     currentPlayStyle: "활동형 올라운더",
     currentMainPosition: "dm",
+  });
+  Object.assign(playerCurrentStats[1], {
+    currentPlayStyle: "침투형 골게터",
+    currentMainPosition: "attack",
   });
   const playerMonthlyCards = [
     engine.generatePlayerMonthlyCard({
@@ -103,10 +191,20 @@
       cards: playerMatchCards,
       generatedAt: "2026-05-23T15:00:00.000Z",
     }),
+    engine.generatePlayerMonthlyCard({
+      userId: "user:rookie-demo",
+      monthKey: "2026-05",
+      cards: playerMatchCards,
+      generatedAt: "2026-05-25T13:00:00.000Z",
+    }),
   ];
   Object.assign(playerMonthlyCards[0], {
     mainPlayStyle: "활동형 올라운더",
     mainPosition: "dm",
+  });
+  Object.assign(playerMonthlyCards[1], {
+    mainPlayStyle: "침투형 골게터",
+    mainPosition: "attack",
   });
 
   function generateCardFor(match, targetUserId, generatedAt) {
@@ -203,6 +301,15 @@
     return matches.find((item) => item.id === match) || null;
   }
 
+  function normalizePlaylogId(value = "") {
+    return String(value).trim().toLowerCase().replace(/\s+/g, "");
+  }
+
+  function findUserByPlaylogId(playlogId) {
+    const normalized = normalizePlaylogId(playlogId);
+    return users.find((user) => user.playlogId === normalized) || null;
+  }
+
   function addFriend({ userId: ownerUserId, friendUserId, createdAt = new Date().toISOString() }) {
     const existing = friends.find((friend) =>
       friend.userId === ownerUserId && friend.friendUserId === friendUserId,
@@ -214,6 +321,57 @@
     const friend = { userId: ownerUserId, friendUserId, status: "accepted", createdAt };
     friends.push(friend);
     return friend;
+  }
+
+  function saveUserApplication({
+    id = `user:pending:${Date.now()}`,
+    playlogId = "",
+    name = "",
+    nickname = "",
+    mainPosition = "free",
+    preferredRole = "",
+    profilePreset = "free-1",
+    bio = "",
+    password = "1234",
+    createdAt = new Date().toISOString(),
+  }) {
+    const normalizedPlaylogId = normalizePlaylogId(playlogId);
+    if (!normalizedPlaylogId || !/^[a-z0-9_]+$/.test(normalizedPlaylogId)) return null;
+    if (users.some((item) => item.playlogId === normalizedPlaylogId && item.id !== id)) return null;
+    const user = {
+      id,
+      playlogId: normalizedPlaylogId,
+      password,
+      name,
+      nickname,
+      status: "pending",
+      role: "user",
+      mainPosition,
+      preferredRole,
+      profilePreset,
+      bio,
+      createdAt,
+      approvedAt: null,
+    };
+    const index = users.findIndex((item) => item.id === id);
+    if (index >= 0) users[index] = user;
+    else users.push(user);
+    return user;
+  }
+
+  function approveUser(userIdToApprove, approvedAt = new Date().toISOString()) {
+    const user = users.find((item) => item.id === userIdToApprove);
+    if (!user) return null;
+    user.status = "approved";
+    user.approvedAt = approvedAt;
+    return user;
+  }
+
+  function rejectUser(userIdToReject) {
+    const user = users.find((item) => item.id === userIdToReject);
+    if (!user) return null;
+    user.status = "rejected";
+    return user;
   }
 
   function activeEvaluationsForMatch(match) {
@@ -494,6 +652,7 @@
   const activeEvaluationMatchId = "match:sangam-evaluating-2026-05-28";
   const qaAwardOnMatchId = "match:qa-award-on-2026-05-29";
   const qaAwardOffMatchId = "match:qa-award-off-2026-05-29";
+  const rookieActiveMatchId = "match:rookie-active-2026-05-29";
   function seedLastEvaluatorQA(match, minuteOffset = 0) {
     ["user:seunghyun", "user:minsu", "user:jihoon", "user:hyunwoo"]
       .filter((evaluatorUserId) => evaluatorUserId !== "user:seunghyun")
@@ -534,6 +693,65 @@
   seedLastEvaluatorQA(activeEvaluationMatchId, 0);
   seedLastEvaluatorQA(qaAwardOnMatchId, 10);
   seedLastEvaluatorQA(qaAwardOffMatchId, 20);
+  ["user:minsu", "user:jihoon", "user:hyunwoo"].forEach((evaluatorUserId, evaluatorIndex) => {
+    ["user:rookie-demo", "user:minsu", "user:jihoon", "user:hyunwoo"]
+      .filter((targetUserId) => targetUserId !== evaluatorUserId)
+      .forEach((targetUserId, targetIndex) => {
+        const selectedPosition = targetUserId === "user:rookie-demo" ? "attack" : "free";
+        const evaluationId = `evaluation:${rookieActiveMatchId}:${evaluatorUserId}:${targetUserId}`;
+        evaluations.push({
+          id: evaluationId,
+          matchId: rookieActiveMatchId,
+          evaluatorUserId,
+          targetUserId,
+          selectedPosition,
+          overallComment: targetUserId === "user:rookie-demo" ? "전방 움직임이 가볍고 침투 타이밍이 좋았다." : "",
+          createdAt: `2026-05-29T11:${String(10 + evaluatorIndex * 4 + targetIndex).padStart(2, "0")}:00.000Z`,
+          updatedAt: `2026-05-29T11:${String(10 + evaluatorIndex * 4 + targetIndex).padStart(2, "0")}:00.000Z`,
+          version: 1,
+          isActive: true,
+          scores: selectedPosition === "attack"
+            ? scores(evaluationId, selectedPosition, { activity: 8, offTheBall: 8, stamina: 8 }, { finishing: 8, attackingPositioning: 9, attackingLinkUp: 7, frontPressure: 8, ballKeeping: 7 })
+            : scores(evaluationId, selectedPosition, { activity: 7, stablePass: 8, buildUp: 8 }, { allAreaInvolvement: 7, spaceConnection: 8, activityRange: 7, fluidity: 7, allRoundContribution: 8 }),
+          traits: [
+            { id: `${evaluationId}:trait:aggression`, evaluationId, key: "aggression", score: 8 },
+            { id: `${evaluationId}:trait:boldness`, evaluationId, key: "boldness", score: 8 },
+          ],
+          highlights: [{ id: `${evaluationId}:highlight:pace`, evaluationId, key: "pace" }],
+        });
+      });
+  });
+  createMatch({
+    id: rookieCardMatchId1,
+    title: "루키 데뷔전",
+    date: "2026-05-18T10:00:00.000Z",
+    location: "상암 풋살장",
+    status: "published",
+    participants: ["user:rookie-demo", "user:minsu", "user:jihoon", "user:hyunwoo"],
+    awardVotingEnabled: false,
+  });
+  createMatch({
+    id: rookieCardMatchId2,
+    title: "루키 성장 경기",
+    date: "2026-05-25T10:00:00.000Z",
+    location: "망원 풋살장",
+    status: "published",
+    participants: ["user:rookie-demo", "user:minsu", "user:jihoon", "user:hyunwoo"],
+    awardVotingEnabled: false,
+  });
+  createMatch({
+    id: rookieActiveMatchId,
+    title: "루키 체험 평가 경기",
+    date: "2026-05-29T11:00:00.000Z",
+    location: "플레이로그 풋살파크",
+    participants: [
+      { userId: "user:rookie-demo", joinedAt: "2026-05-29T10:50:00.000Z", evaluationCompleted: false },
+      { userId: "user:minsu", joinedAt: "2026-05-29T10:51:00.000Z", evaluationCompleted: true },
+      { userId: "user:jihoon", joinedAt: "2026-05-29T10:52:00.000Z", evaluationCompleted: true },
+      { userId: "user:hyunwoo", joinedAt: "2026-05-29T10:53:00.000Z", evaluationCompleted: true },
+    ],
+    awardVotingEnabled: true,
+  });
   createMatch({
     id: activeEvaluationMatchId,
     title: "상암 목요일 풋살",
@@ -579,6 +797,7 @@
 
   root.PlaylogOfficialData = {
     evaluationDeadlineOptions,
+    users,
     activeEvaluationMatchId,
     matches,
     friends,
@@ -595,6 +814,10 @@
     calculateEvaluationDeadlineAt,
     createMatch,
     addFriend,
+    findUserByPlaylogId,
+    saveUserApplication,
+    approveUser,
+    rejectUser,
     getEvaluationTargets,
     getRemainingEvaluationTargets,
     getEvaluationProgress,

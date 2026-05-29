@@ -52,6 +52,7 @@ function renderAppWithData(currentStats, matchCards = null, monthlyCards = [], m
   };
   delete require.cache[require.resolve("./app.js")];
   require("./app.js");
+  global.window.PlaylogApp.loginAs("user:seunghyun");
   return elements;
 }
 
@@ -279,11 +280,11 @@ const fallback = renderAppWithData(null);
 assert.equal(fallback.get("#homeOvr").textContent, "-");
 assert.equal(fallback.get(".ovr-line .rise").hidden, true);
 assert.ok(fallback.get("#homeRadar").innerHTML.includes("활동성"));
-assert.ok(fallback.get("#recentMatches").innerHTML.includes("용산 토요 풋살"));
+assert.ok(fallback.get("#recentMatches").innerHTML.includes("아직 완료된 경기가 없습니다."));
 assert.equal(fallback.get("#stepTitle").textContent, "경기 평가 리스트");
 assert.ok(fallback.get("#evaluationPane").innerHTML.includes("상암 목요일 풋살"));
-assert.equal(fallback.has("#homeMonthlyMeta"), false);
-assert.equal(fallback.has("#homeMonthlyRadar"), false);
+assert.equal(fallback.get("#homeMonthlyMeta").hidden, true);
+assert.equal(fallback.get("#homeMonthlyRadar").hidden, true);
 fallback.get("#officialCard").listeners.click();
 assert.ok(fallback.get("#sheet").innerHTML.includes("상승 스탯 TOP 3"));
 

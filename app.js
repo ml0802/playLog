@@ -68,7 +68,7 @@ const avatarSheets = {
   free: "./assets/preset-free.png",
 };
 const evaluationFields = window.PlaylogEngine.EVALUATION_FIELDS;
-const currentUserId = "user:seunghyun";
+let currentUserId = null;
 const currentMatchId = window.PlaylogOfficialData?.activeEvaluationMatchId || "match:sangam-2026-05-23";
 let selectedMatchId = currentMatchId;
 const observedTraitScore = 8;
@@ -80,7 +80,7 @@ const playerIds = {
   "최성민": "user:sungmin",
 };
 const userNames = {
-  [currentUserId]: "승현",
+  ...Object.fromEntries((window.PlaylogOfficialData?.users || []).map((user) => [user.id, user.nickname || user.name || user.id])),
   ...Object.fromEntries(Object.entries(playerIds).map(([name, id]) => [id, name])),
 };
 const matchAnalysis = {
@@ -117,6 +117,13 @@ const positions = [
   ["defense", "수비", "상대 공격을 막아요"],
   ["free", "프리롤", "정해진 역할보다 흐름을 만들어요"],
 ];
+const signupRoleOptions = {
+  attack: ["침투형 골게터", "포스트 플레이어", "압박형 공격수", "연계형 공격수", "찬스메이커"],
+  am: ["플레이메이커", "찬스메이커", "전진 패서", "하프스페이스 침투형", "공격 조율자"],
+  dm: ["박스투박스", "후방 조율자", "압박형 미드필더", "연결형 미드필더", "수비형 앵커"],
+  defense: ["압박형 수비수", "커버형 수비수", "빌드업 수비수", "대인마크형", "안정형 수비수"],
+  free: ["올라운더", "연결형 프리롤", "공간 침투형", "템포 조율형", "밸런스형"],
+};
 const flowSteps = ["선수 선택", "포지션 선택", "공통 필수 평가", "포지션 특화 평가", "선택 평가", "한 줄 평", "경기 투표"];
 const reflectionSteps = ["포지션 선택", "공통 자가평가", "포지션 자가평가", "성향과 특징", "개인 회고"];
 const evaluationCommentPlaceholder = "압박 속에서도 짧게 연결해줘서 흐름이 살아났어요.";
@@ -158,6 +165,7 @@ let matchResultSelectedCard = null;
 let evaluationMode = "list";
 let reflectionMode = "list";
 let newMatchDraft = null;
+let authMode = "landing";
 let toastTimer;
 
 function resetEvaluationDraft() {
@@ -235,6 +243,57 @@ function sanitizeOptionalText(value = "", placeholders = []) {
   return placeholders.includes(text) ? "" : text;
 }
 
+function appUser(userId = currentUserId) {
+  return (window.PlaylogOfficialData?.users || []).find((user) => user.id === userId) || null;
+}
+
+function displayUserName(userId) {
+  const user = appUser(userId);
+  return user?.nickname || user?.name || userNames[userId] || userId;
+}
+
+function normalizePlaylogId(value = "") {
+  return String(value).trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function signupRoleOptionsHtml(positionKey, selectedRole = "") {
+  const options = signupRoleOptions[positionKey] || signupRoleOptions.free;
+  return `<option value="">선택하세요</option>${options.map((role) => `<option value="${role}" ${selectedRole === role ? "selected" : ""}>${role}</option>`).join("")}`;
+}
+
+function isCurrentUserApproved() {
+  if (!Array.isArray(window.PlaylogOfficialData?.users)) return true;
+  return appUser(currentUserId)?.status === "approved";
+}
+
+function loginAs(userId) {
+  currentUserId = userId;
+  selectedAvatar = appUser(userId)?.profilePreset || "free-1";
+  const nextMatch = (window.PlaylogOfficialData?.matches || [])
+    .filter((match) => (match.participants || []).some((participant) => participant.userId === userId))
+    .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())[0];
+  if (nextMatch) selectedMatchId = nextMatch.id;
+  authMode = "landing";
+  if (isCurrentUserApproved()) {
+    renderHome();
+    renderEvaluation();
+    renderReflection();
+    renderCards();
+    renderFriends();
+    setView("home");
+  } else {
+    setView("auth");
+  }
+}
+
+function logout() {
+  currentUserId = null;
+  selectedAvatar = "free-1";
+  authMode = "landing";
+  closeSheet();
+  setView("auth");
+}
+
 function fieldLabel(key) {
   const pools = [
     evaluationFields.common,
@@ -246,7 +305,9 @@ function fieldLabel(key) {
 }
 
 function activeMatchRecord() {
-  return window.PlaylogOfficialData?.matches?.find((match) => match.id === selectedMatchId) || null;
+  const match = window.PlaylogOfficialData?.matches?.find((item) => item.id === selectedMatchId) || null;
+  if (!match) return null;
+  return (match.participants || []).some((participant) => participant.userId === currentUserId) ? match : null;
 }
 
 function evaluationTargetPlayers() {
@@ -346,13 +407,17 @@ function matchParticipantCandidates() {
     .filter((friend) => friend.userId === currentUserId && friend.status === "accepted")
     .map((friend) => friend.friendUserId);
   return [
-    { userId: currentUserId, name: userNames[currentUserId] || "승현", locked: true },
-    ...friendIds.map((userId) => ({ userId, name: userNames[userId] || userId, locked: false })),
+    { userId: currentUserId, name: displayUserName(currentUserId), locked: true },
+    ...friendIds.map((userId) => ({ userId, name: displayUserName(userId), locked: false })),
   ];
 }
 
 function sampleUserOptions() {
-  return Object.entries(playerIds).map(([name, userId]) => ({ name, userId }));
+  const approvedUsers = (window.PlaylogOfficialData?.users || [])
+    .filter((user) => user.id !== currentUserId && user.status === "approved")
+    .map((user) => ({ name: displayUserName(user.id), userId: user.id }));
+  if (approvedUsers.length) return approvedUsers;
+  return Object.entries(playerIds).map(([name, userId]) => ({ name: displayUserName(userId) || name, userId }));
 }
 
 function friendUsers() {
@@ -365,6 +430,26 @@ function friendUsers() {
 function nonFriendUsers() {
   const acceptedFriendIds = new Set(friendUsers().map((user) => user.userId));
   return sampleUserOptions().filter((user) => !acceptedFriendIds.has(user.userId));
+}
+
+function isAcceptedFriend(userId) {
+  return (window.PlaylogOfficialData?.friends || []).some((friend) =>
+    friend.userId === currentUserId && friend.friendUserId === userId && friend.status === "accepted",
+  );
+}
+
+function friendProfileSummary(userId) {
+  const cards = userMatchCards(userId);
+  const latestCard = cards[0];
+  return {
+    position: positionLabels[latestCard?.mainEvaluatedPosition]?.[0] || "포지션 분석 준비중",
+    ovr: latestCard?.overallRating ? `OVR ${latestCard.overallRating}` : "OVR 분석 준비중",
+    style: latestCard?.playStyle || "플레이유형 분석 준비중",
+    recentTogether: (window.PlaylogOfficialData?.matches || []).some((match) =>
+      (match.participants || []).some((participant) => participant.userId === currentUserId)
+      && (match.participants || []).some((participant) => participant.userId === userId),
+    ),
+  };
 }
 
 function resetNewMatchDraft() {
@@ -390,7 +475,19 @@ function matchDisplayMeta(match) {
 function renderActiveMatchProgress() {
   const match = activeMatchRecord();
   const progress = window.PlaylogOfficialData?.getEvaluationProgress?.(selectedMatchId);
-  if (!match || !progress) return;
+  if (!match || !progress) {
+    document.querySelector("#activeMatchStatus").textContent = "대기";
+    document.querySelector("#activeMatchTitle").textContent = "진행 중인 평가가 없습니다.";
+    document.querySelector("#activeMatchMeta").textContent = "새로운 경기에 참여해 평가를 받아보세요.";
+    document.querySelector("#activeMatchWaiting").hidden = true;
+    document.querySelector("#activeMatchFaces").innerHTML = "";
+    document.querySelector("#activeMatchProgress").setAttribute("style", "--progress: 0");
+    document.querySelector("#activeMatchProgressValue").textContent = "-";
+    document.querySelector("#activeMatchProgressLabel").textContent = "대기";
+    document.querySelector("#activeMatchAction").hidden = true;
+    return;
+  }
+  document.querySelector("#activeMatchAction").hidden = false;
   const waiting = window.PlaylogOfficialData.getPublishWaitingStatus?.(selectedMatchId);
   const pomResult = match.status === "published"
     ? window.PlaylogOfficialData.calculateMatchAward?.(selectedMatchId, "pom")
@@ -558,7 +655,8 @@ function latestHomeAnalysisCard() {
 
 function matchTitle(card) {
   const knownMatches = { "match:sangam-2026-05-23": "상암 목요일 풋살" };
-  return knownMatches[card.matchId] || card.matchId;
+  const managed = (window.PlaylogOfficialData?.matches || []).find((match) => match.id === card.matchId);
+  return managed?.title || knownMatches[card.matchId] || card.matchId;
 }
 
 function matchDate(card) {
@@ -604,6 +702,10 @@ function radarPreviewMarkup(stats, detailed = false) {
     return `<text x="${x}" y="${y}" text-anchor="middle"><tspan x="${x}" dy="-8">${label}</tspan><tspan x="${x}" dy="22">${score}</tspan></text>`;
   }).join("") : "";
   return `<svg viewBox="0 0 ${size} ${size}" aria-label="핵심 능력 분석">${grid}<polygon points="${points.map((point) => point.join(",")).join(" ")}" fill="rgba(126,86,255,.48)" stroke="#b08cff" stroke-width="2" />${labels}</svg>`;
+}
+
+function emptyRadarStats() {
+  return [["활동성", null], ["게임 센스", null], ["패스", null], ["볼 컨트롤", null], ["움직임", null], ["멘탈", null]];
 }
 
 function representativePosition() {
@@ -1317,8 +1419,9 @@ function renderRadar(target, stats, size = 140) {
   const detailed = size > 180;
   const maxRadius = size * (detailed ? 0.27 : 0.35);
   const points = stats.map(([, score], index) => {
+    const safeScore = Number.isFinite(score) ? score : 0;
     const angle = Math.PI * 2 * (index / stats.length) - Math.PI / 2;
-    const radius = (score / 100) * maxRadius;
+    const radius = (safeScore / 100) * maxRadius;
     return [center + Math.cos(angle) * radius, center + Math.sin(angle) * radius];
   });
   const grid = [0.33, 0.66, 1].map((scale) => {
@@ -1332,8 +1435,9 @@ function renderRadar(target, stats, size = 140) {
     const angle = Math.PI * 2 * (index / stats.length) - Math.PI / 2;
       const x = center + Math.cos(angle) * maxRadius * (detailed ? 1.47 : 1.28);
       const y = center + Math.sin(angle) * maxRadius * (detailed ? 1.47 : 1.28);
+      const displayScore = Number.isFinite(score) ? score : "-";
       return detailed
-        ? `<text x="${x}" y="${y}" text-anchor="middle"><tspan x="${x}" dy="-8">${label}</tspan><tspan x="${x}" dy="22">${score}</tspan></text>`
+        ? `<text x="${x}" y="${y}" text-anchor="middle"><tspan x="${x}" dy="-8">${label}</tspan><tspan x="${x}" dy="22">${displayScore}</tspan></text>`
         : `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${label}</text>`;
   }).join("");
 
@@ -1374,11 +1478,11 @@ function openSheet(kind, payload = null) {
       </div>
     `,
     friend: `
-      <h3>친구 요청 보내기</h3>
-      <p>MVP에서는 샘플 유저를 바로 친구로 추가합니다.</p>
-      <div class="friend-candidate-list">
-        ${nonFriendUsers().map((user) => `<button class="sheet-action" data-add-friend="${user.userId}" type="button">${user.name}<span>추가</span></button>`).join("") || "<p>추가할 수 있는 샘플 유저가 없습니다.</p>"}
-      </div>
+      <h3>Playlog ID로 친구 추가</h3>
+      <p>닉네임은 중복될 수 있어요. 친구 추가는 고유 Playlog ID로 검색합니다.</p>
+      <label class="field-label"><span>Playlog ID</span><input id="friendPlaylogIdSearch" placeholder="예: minsu10" /></label>
+      <button class="primary full" id="searchFriendById" type="button">검색</button>
+      <div class="friend-search-result" id="friendSearchResult"></div>
     `,
     card: officialAnalysisCard ? officialAnalysisTemplate(officialAnalysisCard) : `
       <div class="result-title">
@@ -1481,9 +1585,65 @@ function openSheet(kind, payload = null) {
   sheet.querySelectorAll("[data-avatar]").forEach((button) => {
     button.addEventListener("click", () => {
       selectedAvatar = button.dataset.avatar;
+      const user = appUser(currentUserId);
+      if (user) user.profilePreset = selectedAvatar;
       applyAvatarPreset();
       closeSheet();
       showToast("프로필 프리셋을 적용했습니다");
+    });
+  });
+  const renderFriendSearchResult = (message) => {
+    const result = sheet.querySelector("#friendSearchResult");
+    if (result) result.innerHTML = message;
+  };
+  sheet.querySelector("#searchFriendById")?.addEventListener("click", () => {
+    const query = normalizePlaylogId(sheet.querySelector("#friendPlaylogIdSearch")?.value || "");
+    if (!query) {
+      renderFriendSearchResult(`<p class="search-message">Playlog ID를 입력해주세요.</p>`);
+      return;
+    }
+    const user = window.PlaylogOfficialData?.findUserByPlaylogId?.(query);
+    if (!user) {
+      renderFriendSearchResult(`<p class="search-message">해당 Playlog ID의 사용자를 찾을 수 없습니다.</p>`);
+      return;
+    }
+    if (user.id === currentUserId) {
+      renderFriendSearchResult(`<p class="search-message">본인은 친구로 추가할 수 없습니다.</p>`);
+      return;
+    }
+    if (user.status !== "approved") {
+      renderFriendSearchResult(`<p class="search-message">아직 승인되지 않은 사용자입니다.</p>`);
+      return;
+    }
+    if (isAcceptedFriend(user.id)) {
+      renderFriendSearchResult(`<p class="search-message">이미 친구입니다.</p>`);
+      return;
+    }
+    const summary = friendProfileSummary(user.id);
+    const positionLabel = positionLabels[user.mainPosition]?.[0] || user.mainPosition || "포지션 준비중";
+    const roleLabel = user.preferredRole || summary.style;
+    renderFriendSearchResult(`
+      <article class="friend-card search-card enhanced-search-card">
+        <i>${displayUserName(user.id).slice(0, 1)}</i>
+        <div class="search-card-body">
+          <strong>${displayUserName(user.id)}</strong>
+          <p>@${user.playlogId} · ${positionLabel}</p>
+          <div class="search-card-tags"><span>${positionLabel}</span><span>${roleLabel}</span><span>${summary.ovr.includes("준비") ? "분석 준비중" : summary.ovr}</span></div>
+          <small>${summary.ovr} · ${summary.style}</small>
+        </div>
+        <button data-confirm-add-friend="${user.id}" type="button"><span>＋</span> 친구 추가</button>
+      </article>
+    `);
+    sheet.querySelector("[data-confirm-add-friend]")?.addEventListener("click", (event) => {
+      const friendUserId = event.currentTarget.dataset.confirmAddFriend;
+      window.PlaylogOfficialData?.addFriend?.({
+        userId: currentUserId,
+        friendUserId,
+        createdAt: new Date().toISOString(),
+      });
+      renderFriends();
+      closeSheet();
+      showToast("친구 목록에 추가되었습니다.");
     });
   });
   sheet.querySelectorAll("[data-add-friend]").forEach((button) => button.addEventListener("click", () => {
@@ -1495,7 +1655,7 @@ function openSheet(kind, payload = null) {
     });
     renderFriends();
     closeSheet();
-    showToast(`${userNames[friendUserId] || "친구"}님을 친구 목록에 추가했습니다`);
+    showToast("친구 목록에 추가되었습니다.");
   }));
 }
 
@@ -1516,13 +1676,16 @@ function renderHome() {
   const analysisCard = latestHomeAnalysisCard();
   const monthlyCard = latestHomeMonthlyCard();
   const matchScore = calculateMatchScore(average(Object.values(commonRatings)), average([6.7]));
-  const positionKey = stats?.currentMainPosition || representativePosition();
+  const user = appUser(currentUserId);
+  const positionKey = stats?.currentMainPosition || user?.mainPosition || representativePosition();
   const position = positionLabels[positionKey];
   const profileKey = { am: "cam", dm: "cdm" }[positionKey] || positionKey;
   const profile = playType(profileKey, tendencies);
+  document.querySelector("#profile-title").textContent = displayUserName(currentUserId);
   document.querySelector("#homeCardKicker").textContent = stats?.sourceType === "monthlyFallback" ? "CURRENT FORM · 월카드 대체" : "CURRENT FORM";
   document.querySelector("#homeFormBasis").textContent = currentFormBasisLabel(stats);
   renderActiveMatchProgress();
+  document.querySelector("#avatarPicker").classList.toggle("empty-profile", !stats);
   const change = document.querySelector(".ovr-line .rise");
   document.querySelector("#homeOvr").textContent = stats ? stats.currentOVR : "-";
   if (stats) {
@@ -1549,20 +1712,14 @@ function renderHome() {
     document.querySelector("#homePlayType").textContent = "분석 준비중";
     document.querySelector("#homePlayTypeSub").textContent = "선택 평가가 더 쌓이면 표시됩니다.";
     document.querySelector("#homeSupportTags").innerHTML = "";
-  } else if (profile) {
-    identity.classList.remove("pending");
-    document.querySelector("#homePlayType").textContent = profile.primary.name;
-    document.querySelector("#homePlayTypeSub").textContent = profile.primary.sub;
-    const changeWords = ["상승 중", "강화"];
-    document.querySelector("#homeSupportTags").innerHTML = profile.support.map((type, index) => `<span>${type.name} <em>${changeWords[index]}</em></span>`).join("");
   } else {
     identity.classList.add("pending");
-    document.querySelector("#homePlayType").textContent = "플레이유형 분석 준비중";
-    document.querySelector("#homePlayTypeSub").textContent = "선택 평가가 더 쌓이면 표시됩니다.";
+    document.querySelector("#homePlayType").textContent = "분석 준비중";
+    document.querySelector("#homePlayTypeSub").textContent = "공식 경기 기록이 쌓이면 표시됩니다.";
     document.querySelector("#homeSupportTags").innerHTML = "";
   }
   applyAvatarPreset();
-  renderRadar(document.querySelector("#homeRadar"), stats ? playerCurrentRadarStats(stats) : [["활동성", 60], ["게임 센스", 60], ["패스", 60], ["볼 컨트롤", 60], ["움직임", 60], ["멘탈", 60]], 320);
+  renderRadar(document.querySelector("#homeRadar"), stats ? playerCurrentRadarStats(stats) : emptyRadarStats(), 320);
   if (analysisCard) {
     const strengthLabels = analysisCard.strengthsTop3.slice(0, 3).map(analysisItemLabel).join(" · ");
     const weaknessLabels = analysisCard.weaknessesTop3.slice(0, 3).map(analysisItemLabel).join(" · ");
@@ -1579,7 +1736,7 @@ function renderHome() {
     }
   } else if (!stats) {
     document.querySelector(".growth-read small").textContent = "CURRENT FORM ANALYSIS";
-    document.querySelector(".growth-read strong").textContent = "분석 준비중";
+    document.querySelector(".growth-read strong").textContent = "기록 없음";
     document.querySelector(".growth-read p").textContent = "아직 공식 경기 기록이 없습니다.";
   } else if (stats.sourceType === "monthlyFallback") {
     document.querySelector(".growth-read small").textContent = "CURRENT FORM ANALYSIS";
@@ -1599,27 +1756,35 @@ function renderHome() {
     document.querySelector("#homeMonthlyMeta").innerHTML = `<strong>${monthlyCard.monthlyOVR}</strong><em>지난달 대비 ${monthlyChange}</em><span>${monthlyPosition}</span><span>${Number(month)}월 ${monthlyCard.matchCount}경기 기준</span>`;
     document.querySelector("#homeMonthlyRadar").hidden = true;
     document.querySelector("#homeMonthlyRadar").innerHTML = "";
+    document.querySelector("#homeMonthlyPositionText").hidden = false;
+    document.querySelector("#homeMonthlyStrengthText").hidden = false;
     document.querySelector("#homeMonthlyDescription").textContent = `이번 달 OVR ${monthlyCard.monthlyOVR}의 ${monthlyCard.mainPlayStyle}로 기록되었습니다.`;
     document.querySelector("#homeMonthlyPositionText").textContent = `${monthlyPosition} 역할로 ${monthlyCard.matchCount}경기를 평가받았습니다.`;
     document.querySelector("#homeMonthlyStrengthText").textContent = monthlyStrengths ? `자주 언급된 강점은 ${monthlyStrengths}입니다.` : "월간 강점 데이터가 쌓이는 중입니다.";
     document.querySelector("#homeMonthlyStrengths").innerHTML = (monthlyCard.strengthsSummary || []).slice(0, 3)
       .map((item) => `<span>${item.label}</span>`).join("");
+  } else {
+    document.querySelector("#homeMonthlyKicker").textContent = "MONTHLY CARD";
+    document.querySelector("#homeMonthlyTitle").textContent = "이번 달 기록이 없습니다.";
+    document.querySelector("#homeMonthlyMeta").hidden = true;
+    document.querySelector("#homeMonthlyRadar").hidden = true;
+    document.querySelector("#homeMonthlyRadar").innerHTML = "";
+    document.querySelector("#homeMonthlyDescription").textContent = "공식 경기 카드가 생성되면 월간 요약이 표시됩니다.";
+    document.querySelector("#homeMonthlyPositionText").hidden = true;
+    document.querySelector("#homeMonthlyStrengthText").hidden = true;
+    document.querySelector("#homeMonthlyPositionText").textContent = "";
+    document.querySelector("#homeMonthlyStrengthText").textContent = "";
+    document.querySelector("#homeMonthlyStrengths").innerHTML = "";
   }
   const recentCards = recentHomeMatchCards();
   if (recentCards.length) {
     document.querySelector("#recentMatches").innerHTML = recentCards.map(homeMatchSummary).join("");
   } else {
-    const rows = [
-      ["용산 토요 풋살", "2026.05.18 (월)", 76],
-      ["망원 수요 풋살", "2026.05.15 (금)", 74],
-      ["상암 일요 풋살", "2026.05.12 (화)", 72],
-    ];
-    document.querySelector("#recentMatches").innerHTML = rows.map(([title, meta, ovr]) => `
-      <button class="recent-row" data-toast="경기 카드 상세를 열었습니다" type="button">
-        <div><h3>${title}</h3><p>${meta}</p></div>
-        <strong>OVR ${ovr}</strong>
-      </button>
-    `).join("");
+    document.querySelector("#recentMatches").innerHTML = `
+      <article class="recent-row empty-state-row">
+        <div><h3>아직 완료된 경기가 없습니다.</h3><p>첫 경기에 참여하면 기록이 이곳에 쌓입니다.</p></div>
+      </article>
+    `;
   }
 }
 
@@ -2248,6 +2413,163 @@ function openReflectionDetail(reflectionId) {
   overlay.hidden = false;
 }
 
+function renderAuth() {
+  const pane = document.querySelector("#authPane");
+  if (!pane) return;
+  const user = appUser(currentUserId);
+  const sampleCard = `
+    <article class="landing-player-card">
+      <div class="landing-card-art"><span class="preset-thumb mini" style="${presetStyle({ image: avatarSheets.attack, index: 1 })}"></span><em>ST</em></div>
+      <div>
+        <p>PLAYLOG SAMPLE</p>
+        <h2>루키</h2>
+        <span>공격수 · ST</span>
+        <strong>침투형 골게터</strong>
+        <b>OVR 82</b>
+        <div class="card-preview-tags"><i>득점력</i><i>침투</i><i>결정력</i></div>
+      </div>
+    </article>
+  `;
+  if (!currentUserId && authMode !== "signup") {
+    pane.innerHTML = `
+      <div class="landing-copy">
+        <h1>PLAYLOG</h1>
+        <p>경기의 기억을 기록하고,<br>동료들의 평가를 통해 성장하세요.</p>
+      </div>
+      ${sampleCard}
+      <div class="auth-login-box">
+        <label>Playlog ID<input id="loginPlaylogId" placeholder="예: rookie10" /></label>
+        <label>비밀번호<input id="loginPassword" type="password" inputmode="numeric" maxlength="4" placeholder="숫자 4자리" /></label>
+        <button class="primary full" id="loginByPlaylogId" type="button">로그인</button>
+        <button class="secondary full" id="openSignup" type="button">회원가입 신청</button>
+        <button class="ghost-button" id="quickLoginSeunghyun" type="button">루키 계정으로 로그인 없이 둘러보기</button>
+      </div>
+    `;
+    pane.querySelector("#loginByPlaylogId")?.addEventListener("click", () => {
+      const playlogId = normalizePlaylogId(pane.querySelector("#loginPlaylogId").value);
+      const password = pane.querySelector("#loginPassword").value;
+      const found = window.PlaylogOfficialData?.findUserByPlaylogId?.(playlogId);
+      if (!found) {
+        showToast("해당 Playlog ID의 사용자를 찾을 수 없습니다.");
+        return;
+      }
+      if ((found.password || "1234") !== password) {
+        showToast("비밀번호가 일치하지 않습니다.");
+        return;
+      }
+      loginAs(found.id);
+    });
+    pane.querySelector("#openSignup")?.addEventListener("click", () => {
+      authMode = "signup";
+      renderAuth();
+    });
+    pane.querySelector("#quickLoginSeunghyun")?.addEventListener("click", () => loginAs("user:rookie-demo"));
+    return;
+  }
+  if (user?.status === "pending") {
+    pane.innerHTML = `
+      <h2>승인 대기 중입니다.</h2>
+      <p>관리자 승인 후 PLAYLOG를 사용할 수 있습니다.</p>
+      <div class="auth-summary">
+        <span>이름 <strong>${escapeHtml(user.name || "-")}</strong></span>
+        <span>닉네임 <strong>${escapeHtml(user.nickname || "-")}</strong></span>
+        <span>Playlog ID <strong>@${escapeHtml(user.playlogId || "-")}</strong></span>
+        <span>주 포지션 <strong>${positionLabels[user.mainPosition]?.[0] || user.mainPosition || "-"}</strong></span>
+        <span>선호 역할 <strong>${escapeHtml(user.preferredRole || "-")}</strong></span>
+        <span>신청일 <strong>${new Date(user.createdAt).toLocaleDateString("ko-KR")}</strong></span>
+      </div>
+      ${sampleCard}
+      <button class="secondary full" id="backToLanding" type="button">로그인 화면으로</button>
+    `;
+    pane.querySelector("#backToLanding")?.addEventListener("click", logout);
+    return;
+  }
+  const rejectedCopy = user?.status === "rejected"
+    ? `<p class="auth-warning">이전 신청이 거절되었습니다. 정보를 수정해 다시 신청할 수 있습니다.</p>`
+    : "";
+  pane.innerHTML = `
+    <button class="ghost-button auth-back" id="backToLandingFromSignup" type="button">← 이전</button>
+    <h2>플레이로그 가입 신청</h2>
+    <p>폐쇄형 풋살 커뮤니티에 사용할 선수 프로필을 먼저 만들어주세요.</p>
+    ${rejectedCopy}
+    <div class="new-match-form auth-form">
+      <label>이름<input id="signupName" value="${escapeHtml(user?.name || "")}" placeholder="예: 김루키" /></label>
+      <label>닉네임<input id="signupNickname" value="${escapeHtml(user?.nickname || "")}" placeholder="예: 루키" /></label>
+      <label>Playlog ID<input id="signupPlaylogId" value="${escapeHtml(user?.playlogId || "")}" placeholder="예: rookie10" /></label>
+      <label>비밀번호<input id="signupPassword" type="password" inputmode="numeric" maxlength="4" placeholder="숫자 4자리" /></label>
+      <label>주 포지션<select id="signupPosition">${positions.map(([key, label]) => `<option value="${key}" ${user?.mainPosition === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      <label>선호 역할<select id="signupRole">${signupRoleOptionsHtml(user?.mainPosition || "attack", user?.preferredRole || "")}</select></label>
+      <label>한 줄 소개<textarea id="signupBio" rows="3" placeholder="내 플레이 스타일을 짧게 적어주세요.">${escapeHtml(user?.bio || "")}</textarea></label>
+      <label>프로필 프리셋<select id="signupPreset">${avatarPresetItems().map((preset) => `<option value="${preset.key}" ${user?.profilePreset === preset.key ? "selected" : ""}>${preset.name}</option>`).join("")}</select></label>
+      <button class="primary full" id="submitSignup" type="button">가입 신청하기</button>
+    </div>
+  `;
+  pane.querySelector("#backToLandingFromSignup")?.addEventListener("click", () => {
+    currentUserId = null;
+    authMode = "landing";
+    renderAuth();
+  });
+  pane.querySelector("#signupPosition")?.addEventListener("change", (event) => {
+    const roleSelect = pane.querySelector("#signupRole");
+    roleSelect.innerHTML = signupRoleOptionsHtml(event.target.value);
+  });
+  pane.querySelector("#submitSignup")?.addEventListener("click", () => {
+    const name = pane.querySelector("#signupName").value.trim();
+    const nickname = pane.querySelector("#signupNickname").value.trim();
+    const playlogId = normalizePlaylogId(pane.querySelector("#signupPlaylogId").value);
+    const password = pane.querySelector("#signupPassword").value.trim();
+    const preferredRole = pane.querySelector("#signupRole").value;
+    if (!name || !nickname) {
+      showToast("이름과 닉네임을 입력해주세요.");
+      return;
+    }
+    if (!playlogId) {
+      showToast("Playlog ID를 입력해주세요.");
+      return;
+    }
+    if (!/^[a-z0-9_]+$/.test(playlogId)) {
+      showToast("Playlog ID는 영문, 숫자, 언더바만 사용할 수 있어요.");
+      return;
+    }
+    if (!/^\d{4}$/.test(password)) {
+      showToast("비밀번호는 숫자 4자리로 입력해주세요.");
+      return;
+    }
+    const duplicated = (window.PlaylogOfficialData?.users || [])
+      .some((item) => item.playlogId === playlogId && item.id !== currentUserId);
+    if (duplicated) {
+      showToast("이미 사용 중인 Playlog ID입니다.");
+      return;
+    }
+    if (!preferredRole) {
+      showToast("선호 역할을 선택해주세요.");
+      return;
+    }
+    const newUserId = currentUserId || `user:${playlogId}`;
+    const saved = window.PlaylogOfficialData?.saveUserApplication?.({
+      id: newUserId,
+      playlogId,
+      name,
+      nickname,
+      mainPosition: pane.querySelector("#signupPosition").value,
+      preferredRole,
+      profilePreset: pane.querySelector("#signupPreset").value,
+      bio: pane.querySelector("#signupBio").value.trim(),
+      password,
+      createdAt: new Date().toISOString(),
+    });
+    if (!saved) {
+      showToast("이미 사용 중인 Playlog ID입니다.");
+      return;
+    }
+    currentUserId = saved.id;
+    selectedAvatar = saved.profilePreset || "free-1";
+    authMode = "landing";
+    showToast("가입 신청이 완료되었습니다.");
+    renderAuth();
+  });
+}
+
 function renderNewMatch() {
   if (!newMatchDraft) resetNewMatchDraft();
   const pane = document.querySelector("#newMatchPane");
@@ -2261,12 +2583,13 @@ function renderNewMatch() {
       <label>날짜/시간<input id="newMatchDate" type="datetime-local" value="${escapeHtml(newMatchDraft.date)}" /></label>
       <label>장소<input id="newMatchLocation" value="${escapeHtml(newMatchDraft.location)}" placeholder="예: 상암 풋살장" /></label>
       <section class="new-match-section">
-        <strong>참가자 선택</strong>
-        <p>${candidates.length > 1 ? "친구 목록에서 참가자를 선택합니다. 현재 사용자는 기본 포함됩니다." : "친구를 추가하면 경기 참가자로 선택할 수 있습니다."}</p>
+        <strong>친구 선택</strong>
+        <p>${candidates.length > 1 ? "친구 목록에서 이번 경기 참가자를 추가합니다. 현재 사용자는 기본 포함됩니다." : "친구를 추가하면 경기 참가자로 선택할 수 있습니다."}</p>
         <div class="participant-select-grid">
           ${candidates.map((candidate) => {
             const selected = newMatchDraft.participantIds.includes(candidate.userId);
-            return `<button class="chip compact ${selected ? "selected" : ""}" data-new-match-participant="${candidate.userId}" type="button" ${candidate.locked ? "disabled" : ""}>${candidate.name}${candidate.locked ? " · 나" : ""}</button>`;
+            const summary = candidate.locked ? { position: "나", ovr: "기본 포함", style: "PLAYLOG" } : friendProfileSummary(candidate.userId);
+            return `<button class="participant-friend-chip ${selected ? "selected" : ""}" data-new-match-participant="${candidate.userId}" type="button" ${candidate.locked ? "disabled" : ""}><i>${candidate.name.slice(0, 1)}</i><span><strong>${candidate.name}${candidate.locked ? " · 나" : ""}</strong><small>${summary.position} · ${summary.ovr}</small></span></button>`;
           }).join("")}
         </div>
       </section>
@@ -2381,16 +2704,48 @@ function renderCards() {
 
 function renderFriends() {
   const list = friendUsers();
-  document.querySelector("#friendList").innerHTML = list.length
-    ? list.map((friend) => {
-      const card = userMatchCards(friend.userId)[0];
-      const position = positionLabels[card?.mainEvaluatedPosition]?.[0] || "최근 포지션 준비중";
-      const ovr = card?.overallRating ? `OVR ${card.overallRating}` : "분석 준비중";
-      const style = card?.playStyle || "함께 경기하면 분석이 쌓입니다";
-      return `<article><div><strong>${friend.name}</strong><p>${position} · ${ovr} · ${style}</p></div><button data-toast="${friend.name}님은 친구 상태입니다" type="button">친구</button></article>`;
-    }).join("")
-    : `<article><div><strong>친구가 아직 없습니다.</strong><p>친구를 추가하면 새 경기 참가자로 선택할 수 있어요.</p></div><button id="emptyFriendAdd" type="button">추가</button></article>`;
+  const recentTogetherCount = list.filter((friend) => friendProfileSummary(friend.userId).recentTogether).length;
+  const pendingUsers = appUser(currentUserId)?.role === "admin"
+    ? (window.PlaylogOfficialData?.users || []).filter((user) => user.status === "pending")
+    : [];
+  const me = appUser(currentUserId);
+  const myStats = currentHomeStats();
+  const myPosition = positionLabels[me?.mainPosition]?.[0] || "포지션 준비중";
+  const highlight = document.querySelector(".friend-highlight");
+  highlight.innerHTML = `
+    <article class="my-friend-profile">
+      <div><span>내 Playlog ID</span><strong>${displayUserName(currentUserId)}</strong><p>@${me?.playlogId || "-"}</p><small>${myPosition} · ${me?.preferredRole || "선호 역할 준비중"} · ${myStats?.currentOVR ? `OVR ${myStats.currentOVR}` : "분석 준비중"}</small></div>
+      <button type="button" id="logoutButton">로그아웃</button>
+    </article>
+    <span>친구 요약</span><strong>현재 친구 ${list.length}명</strong><p>최근 함께 경기한 플레이어 ${recentTogetherCount}명 · 새 경기 참가자는 친구 목록에서 선택됩니다.</p>
+  `;
+  document.querySelector("#logoutButton")?.addEventListener("click", logout);
+  document.querySelector("#friendList").innerHTML = `
+    ${appUser(currentUserId)?.role === "admin" ? `
+      <div class="friend-section-label">관리자 승인</div>
+      ${pendingUsers.length
+        ? pendingUsers.map((user) => `<article class="friend-card admin-user-card"><i>${displayUserName(user.id).slice(0, 1)}</i><div><strong>${escapeHtml(user.nickname || user.name)}</strong><p>${positionLabels[user.mainPosition]?.[0] || user.mainPosition} · ${escapeHtml(user.preferredRole || "선호 역할 없음")}</p><small>${escapeHtml(user.bio || "소개 없음")}</small></div><div class="admin-actions"><button data-approve-user="${user.id}" type="button">승인</button><button data-reject-user="${user.id}" type="button">거절</button></div></article>`).join("")
+        : `<article class="friend-card admin-user-card"><i>✓</i><div><strong>승인 대기 없음</strong><p>현재 pending 사용자가 없습니다.</p></div></article>`}
+    ` : ""}
+    <div class="friend-section-label">친구 목록</div>
+    ${list.length
+      ? list.map((friend) => {
+        const summary = friendProfileSummary(friend.userId);
+        return `<article class="friend-card"><i>${friend.name.slice(0, 1)}</i><div><strong>${friend.name}</strong><p>${summary.position} · ${summary.ovr}</p><small>${summary.style}${summary.recentTogether ? " · 최근 함께 경기" : ""}</small></div><button data-toast="${friend.name}님은 친구 상태입니다" type="button">친구</button></article>`;
+      }).join("")
+      : `<article class="friend-card"><i>＋</i><div><strong>친구가 아직 없습니다.</strong><p>친구를 추가하면 새 경기 참가자로 선택할 수 있어요.</p></div><button id="emptyFriendAdd" type="button">추가</button></article>`}
+  `;
   document.querySelector("#emptyFriendAdd")?.addEventListener("click", () => openSheet("friend"));
+  document.querySelectorAll("[data-approve-user]").forEach((button) => button.addEventListener("click", () => {
+    window.PlaylogOfficialData?.approveUser?.(button.dataset.approveUser, new Date().toISOString());
+    showToast("사용자를 승인했습니다.");
+    renderFriends();
+  }));
+  document.querySelectorAll("[data-reject-user]").forEach((button) => button.addEventListener("click", () => {
+    window.PlaylogOfficialData?.rejectUser?.(button.dataset.rejectUser);
+    showToast("사용자를 거절했습니다.");
+    renderFriends();
+  }));
 }
 
 function setView(view) {
@@ -2398,7 +2753,9 @@ function setView(view) {
   document.querySelectorAll(".tabbar button").forEach((button) => button.classList.toggle("active", button.dataset.go === view));
   document.querySelector(".hero").hidden = view !== "home";
   document.querySelector(".fab").hidden = view !== "home";
-  window.scrollTo({ top: 0, behavior: "instant" });
+  document.querySelector(".tabbar").hidden = view === "auth";
+  if (typeof window.scrollTo === "function") window.scrollTo({ top: 0, behavior: "instant" });
+  if (view === "auth") renderAuth();
   if (view === "home") renderHome();
   if (view === "evaluate") renderEvaluation();
   if (view === "newMatch") renderNewMatch();
@@ -2486,10 +2843,23 @@ function bindInteractions() {
   });
 }
 
-renderHome();
-renderEvaluation();
-renderReflection();
-renderCards();
-renderFriends();
+window.PlaylogApp = {
+  loginAs,
+  logout,
+  renderAuth,
+  renderHome,
+  renderFriends,
+  setView,
+};
+
 bindInteractions();
+if (isCurrentUserApproved()) {
+  renderHome();
+  renderEvaluation();
+  renderReflection();
+  renderCards();
+  renderFriends();
+} else {
+  setView("auth");
+}
 
