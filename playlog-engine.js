@@ -370,7 +370,7 @@
     return { strengthsTop3, weaknessesTop3, matchAnalysisText: messages.join(" ") };
   }
 
-  function calculateAnalysisChanges(latestCard, previousCards, minimumDifference = 2) {
+  function calculateAnalysisChanges(latestCard, previousCards) {
     const comparisonCards = (previousCards || [])
       .filter((card) => card
         && card.userId === latestCard.userId
@@ -393,7 +393,6 @@
         if (!scores.length) return [];
         const previousRecentAverage = round(average(scores));
         const diff = round(item.score - previousRecentAverage);
-        if (Math.abs(diff) < minimumDifference) return [];
         return [{
           key: item.key,
           label: item.label,

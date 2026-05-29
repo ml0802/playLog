@@ -3,6 +3,52 @@ const engine = require("./playlog-engine.js");
 require("./playlog-official-data.js");
 
 const store = globalThis.PlaylogOfficialData;
+assert.equal(store.users.find((user) => user.id === "user:qa-first-card")?.playlogId, "firstcard");
+assert.equal(store.users.find((user) => user.id === "user:qa-second-card")?.playlogId, "secondcard");
+assert.equal(store.playerMatchCards.filter((card) => card.userId === "user:qa-first-card").length, 0);
+assert.equal(store.playerCurrentStats.some((stats) => stats.userId === "user:qa-first-card"), false);
+assert.equal(store.playerMonthlyCards.some((card) => card.userId === "user:qa-first-card"), false);
+assert.equal(store.playerMatchCards.filter((card) => card.userId === "user:qa-second-card").length, 1);
+assert.equal(store.playerCurrentStats.some((stats) => stats.userId === "user:qa-second-card"), true);
+assert.equal(store.playerMonthlyCards.some((card) => card.userId === "user:qa-second-card"), true);
+const qaSecondPreviewCard = store.generateCardFor("match:qa-second-card-2026-05-29", "user:qa-second-card", "2026-05-29T13:00:00.000Z");
+assert.equal(qaSecondPreviewCard.evaluatorCount, 3);
+assert.equal(Object.values(qaSecondPreviewCard.selectedPositionSummary).filter((item) => item.count > 0).length, 3);
+assert.equal(store.playerMatchCards.filter((card) => card.matchId === "match:qa-second-card-2026-05-29" && card.userId === "user:qa-second-card").length, 0);
+
+function qaCompletionEvaluation(matchId, evaluatorUserId, targetUserId, index) {
+  const id = `evaluation:${matchId}:${evaluatorUserId}:${targetUserId}:complete`;
+  return {
+    id,
+    matchId,
+    evaluatorUserId,
+    targetUserId,
+    selectedPosition: "free",
+    overallComment: "QA 완료 평가",
+    createdAt: `2026-05-29T13:0${index}:00.000Z`,
+    scores: [
+      ...engine.EVALUATION_FIELDS.common.map((field) => ({
+        id: `${id}:common:${field.key}`, evaluationId: id, category: "common", key: field.key, score: 7,
+      })),
+      ...engine.EVALUATION_FIELDS.position.free.map((field) => ({
+        id: `${id}:position:${field.key}`, evaluationId: id, category: "position", key: field.key, score: 8,
+      })),
+    ],
+    traits: [{ id: `${id}:trait:teamwork`, evaluationId: id, key: "teamwork", score: 8 }],
+    highlights: [{ id: `${id}:highlight:passSense`, evaluationId: id, key: "passSense" }],
+  };
+}
+["user:minsu", "user:jihoon", "user:hyunwoo"].forEach((targetUserId, index) => {
+  store.saveEvaluation(qaCompletionEvaluation("match:qa-second-card-2026-05-29", "user:qa-second-card", targetUserId, index));
+});
+const qaSecondCompletedCards = store.playerMatchCards.filter((card) => card.matchId === "match:qa-second-card-2026-05-29" && card.userId === "user:qa-second-card");
+assert.equal(qaSecondCompletedCards.length, 1);
+assert.ok(qaSecondCompletedCards[0].analysisChanges.length > 0);
+assert.ok(qaSecondCompletedCards[0].analysisChanges.some((item) => Math.abs(item.diff) > 0 && Math.abs(item.diff) < 2));
+assert.equal(store.playerMatchCards.filter((card) => card.userId === "user:qa-second-card").length, 2);
+assert.equal(store.playerCurrentStats.find((stats) => stats.userId === "user:qa-second-card").recentMatchCount, 2);
+assert.equal(store.playerMonthlyCards.find((card) => card.userId === "user:qa-second-card" && card.monthKey === "2026-05").matchCount, 2);
+
 const evaluationId = "evaluation:ui:test";
 const evaluation = {
   id: evaluationId,

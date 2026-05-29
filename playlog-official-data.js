@@ -18,6 +18,8 @@
     { id: "user:sungmin", playlogId: "sungmin10", password: "1234", name: "최성민", nickname: "최성민", status: "approved", role: "user", mainPosition: "dm", preferredRole: "압박형 미드필더", profilePreset: "cdm-1", bio: "활동량과 압박으로 팀 밸런스를 잡는 선수", createdAt: "2026-05-20T08:50:00.000Z", approvedAt: "2026-05-20T08:55:00.000Z" },
     { id: "user:rookie-demo", playlogId: "rookie10", password: "1234", name: "김루키", nickname: "루키", status: "approved", role: "user", mainPosition: "attack", preferredRole: "침투형 골게터", profilePreset: "attack-0", bio: "PLAYLOG를 체험 중인 루키입니다.", createdAt: "2026-05-29T09:00:00.000Z", approvedAt: "2026-05-29T09:01:00.000Z" },
     { id: "user:qa-pending", playlogId: "pending10", password: "1234", name: "QA 대기", nickname: "테스트루키", status: "pending", role: "user", mainPosition: "free", preferredRole: "연결형 플레이메이커", profilePreset: "free-1", bio: "승인/친구 추가 QA를 위한 대기 유저", createdAt: "2026-05-29T09:00:00.000Z", approvedAt: null },
+    { id: "user:qa-first-card", playlogId: "firstcard", password: "1234", name: "QA 첫카드", nickname: "첫카드", status: "approved", role: "user", mainPosition: "dm", preferredRole: "후방 조율자", profilePreset: "cdm-0", bio: "첫 공식 카드 생성 QA 계정", createdAt: "2026-05-29T12:00:00.000Z", approvedAt: "2026-05-29T12:01:00.000Z" },
+    { id: "user:qa-second-card", playlogId: "secondcard", password: "1234", name: "QA 두번째카드", nickname: "두번째카드", status: "approved", role: "user", mainPosition: "free", preferredRole: "연결형 프리롤", profilePreset: "free-1", bio: "두 번째 카드 누적 QA 계정", createdAt: "2026-05-29T12:05:00.000Z", approvedAt: "2026-05-29T12:06:00.000Z" },
   ];
   const friends = [
     { userId, friendUserId: "user:minsu", status: "accepted", createdAt: "2026-05-20T09:00:00.000Z" },
@@ -126,6 +128,34 @@
     },
   ];
   evaluations.push(...rookieEvaluations);
+  const qaSecondBaseMatchId = "match:qa-second-card-base-2026-05-20";
+  const qaSecondBaseEvaluations = [
+    {
+      id: "evaluation:qa-second-base:1", matchId: qaSecondBaseMatchId, evaluatorUserId: "user:minsu", targetUserId: "user:qa-second-card", selectedPosition: "dm",
+      overallComment: "후방에서 연결과 압박 대응이 안정적이었다.", createdAt: "2026-05-20T12:00:00.000Z",
+      version: 1, isActive: true, updatedAt: "2026-05-20T12:00:00.000Z",
+      scores: scores("evaluation:qa-second-base:1", "dm", { stablePass: 8, buildUp: 8, concentration: 8 }, { interception: 7, deepBuildUp: 8, pressureResistance: 8, defensiveCover: 7, pressingTiming: 7 }),
+      traits: [{ id: "trait:qa-second-base:1:teamwork", evaluationId: "evaluation:qa-second-base:1", key: "teamwork", score: 8 }],
+      highlights: [{ id: "highlight:qa-second-base:1:passSense", evaluationId: "evaluation:qa-second-base:1", key: "passSense" }],
+    },
+    {
+      id: "evaluation:qa-second-base:2", matchId: qaSecondBaseMatchId, evaluatorUserId: "user:jihoon", targetUserId: "user:qa-second-card", selectedPosition: "dm",
+      overallComment: "수미 자리에서 공수 밸런스가 좋았다.", createdAt: "2026-05-20T12:03:00.000Z",
+      version: 1, isActive: true, updatedAt: "2026-05-20T12:03:00.000Z",
+      scores: scores("evaluation:qa-second-base:2", "dm", { activity: 8, stamina: 8, decision: 8 }, { interception: 8, deepBuildUp: 8, pressureResistance: 7, defensiveCover: 8, pressingTiming: 8 }),
+      traits: [{ id: "trait:qa-second-base:2:aggression", evaluationId: "evaluation:qa-second-base:2", key: "aggression", score: 8 }],
+      highlights: [{ id: "highlight:qa-second-base:2:physical", evaluationId: "evaluation:qa-second-base:2", key: "physical" }],
+    },
+    {
+      id: "evaluation:qa-second-base:3", matchId: qaSecondBaseMatchId, evaluatorUserId: "user:hyunwoo", targetUserId: "user:qa-second-card", selectedPosition: "free",
+      overallComment: "프리롤처럼 넓게 움직이며 연결을 도왔다.", createdAt: "2026-05-20T12:06:00.000Z",
+      version: 1, isActive: true, updatedAt: "2026-05-20T12:06:00.000Z",
+      scores: scores("evaluation:qa-second-base:3", "free", { offTheBall: 8, stablePass: 8 }, { allAreaInvolvement: 8, spaceConnection: 8, activityRange: 8, fluidity: 7, allRoundContribution: 8 }),
+      traits: [{ id: "trait:qa-second-base:3:vision", evaluationId: "evaluation:qa-second-base:3", key: "vision", score: 8 }],
+      highlights: [{ id: "highlight:qa-second-base:3:ballControl", evaluationId: "evaluation:qa-second-base:3", key: "ballControl" }],
+    },
+  ];
+  evaluations.push(...qaSecondBaseEvaluations);
   const rookieCard1 = engine.generatePlayerMatchCard({
     matchId: rookieCardMatchId1,
     userId: "user:rookie-demo",
@@ -147,6 +177,16 @@
     playStyle: "침투형 골게터",
     playStyleCode: "Advanced Forward · AF",
   });
+  const qaSecondExistingCard = engine.generatePlayerMatchCard({
+    matchId: qaSecondBaseMatchId,
+    userId: "user:qa-second-card",
+    evaluations,
+    generatedAt: "2026-05-20T13:00:00.000Z",
+  });
+  Object.assign(qaSecondExistingCard, {
+    playStyle: "연결형 프리롤",
+    playStyleCode: "Link Playmaker",
+  });
 
   const playerMatchCards = [
     engine.generatePlayerMatchCard({
@@ -158,6 +198,7 @@
     }),
     rookieCard1,
     rookieCard2,
+    qaSecondExistingCard,
   ];
   Object.assign(playerMatchCards[0], {
     mainEvaluatedPosition: "dm",
@@ -175,6 +216,11 @@
       cards: playerMatchCards,
       generatedAt: "2026-05-25T13:00:00.000Z",
     }),
+    engine.generatePlayerCurrentStats({
+      userId: "user:qa-second-card",
+      cards: playerMatchCards,
+      generatedAt: "2026-05-20T13:00:00.000Z",
+    }),
   ];
   Object.assign(playerCurrentStats[0], {
     currentPlayStyle: "활동형 올라운더",
@@ -183,6 +229,10 @@
   Object.assign(playerCurrentStats[1], {
     currentPlayStyle: "침투형 골게터",
     currentMainPosition: "attack",
+  });
+  Object.assign(playerCurrentStats[2], {
+    currentPlayStyle: "연결형 프리롤",
+    currentMainPosition: "dm",
   });
   const playerMonthlyCards = [
     engine.generatePlayerMonthlyCard({
@@ -197,6 +247,12 @@
       cards: playerMatchCards,
       generatedAt: "2026-05-25T13:00:00.000Z",
     }),
+    engine.generatePlayerMonthlyCard({
+      userId: "user:qa-second-card",
+      monthKey: "2026-05",
+      cards: playerMatchCards,
+      generatedAt: "2026-05-20T13:00:00.000Z",
+    }),
   ];
   Object.assign(playerMonthlyCards[0], {
     mainPlayStyle: "활동형 올라운더",
@@ -205,6 +261,10 @@
   Object.assign(playerMonthlyCards[1], {
     mainPlayStyle: "침투형 골게터",
     mainPosition: "attack",
+  });
+  Object.assign(playerMonthlyCards[2], {
+    mainPlayStyle: "연결형 프리롤",
+    mainPosition: "dm",
   });
 
   function generateCardFor(match, targetUserId, generatedAt) {
@@ -653,6 +713,8 @@
   const qaAwardOnMatchId = "match:qa-award-on-2026-05-29";
   const qaAwardOffMatchId = "match:qa-award-off-2026-05-29";
   const rookieActiveMatchId = "match:rookie-active-2026-05-29";
+  const qaFirstCardMatchId = "match:qa-first-card-2026-05-29";
+  const qaSecondCardMatchId = "match:qa-second-card-2026-05-29";
   function seedLastEvaluatorQA(match, minuteOffset = 0) {
     ["user:seunghyun", "user:minsu", "user:jihoon", "user:hyunwoo"]
       .filter((evaluatorUserId) => evaluatorUserId !== "user:seunghyun")
@@ -693,6 +755,54 @@
   seedLastEvaluatorQA(activeEvaluationMatchId, 0);
   seedLastEvaluatorQA(qaAwardOnMatchId, 10);
   seedLastEvaluatorQA(qaAwardOffMatchId, 20);
+  function seedLastEvaluatorForPendingUser(match, pendingUserId, positionByEvaluator = {}, minuteOffset = 0) {
+    const participantIds = [pendingUserId, "user:minsu", "user:jihoon", "user:hyunwoo"];
+    participantIds
+      .filter((evaluatorUserId) => evaluatorUserId !== pendingUserId)
+      .forEach((evaluatorUserId, evaluatorIndex) => {
+        participantIds
+          .filter((targetUserId) => targetUserId !== evaluatorUserId)
+          .forEach((targetUserId, targetIndex) => {
+            const targetPosition = targetUserId === pendingUserId
+              ? (positionByEvaluator[evaluatorUserId] || "dm")
+              : "free";
+            const evaluationId = `evaluation:qa-pending:${match}:${evaluatorUserId}:${targetUserId}`;
+            const createdAt = `2026-05-29T12:${String(10 + minuteOffset + evaluatorIndex).padStart(2, "0")}:${String(targetIndex).padStart(2, "0")}.000Z`;
+            evaluations.push({
+              id: evaluationId,
+              matchId: match,
+              evaluatorUserId,
+              targetUserId,
+              selectedPosition: targetPosition,
+              overallComment: targetUserId === pendingUserId ? "여러 역할을 오가며 팀 흐름에 관여했다." : "연결 플레이가 안정적이었다.",
+              createdAt,
+              version: 1,
+              isActive: true,
+              updatedAt: createdAt,
+              scores: targetPosition === "attack"
+                ? scores(evaluationId, targetPosition, { offTheBall: 8, dribbleImpact: 8, composure: 7 }, { finishing: 8, attackingPositioning: 8, attackingLinkUp: 7, frontPressure: 8, ballKeeping: 7 })
+                : targetPosition === "dm"
+                  ? scores(evaluationId, targetPosition, { activity: 8, decision: 8, concentration: 8 }, { interception: 8, deepBuildUp: 8, pressureResistance: 8, defensiveCover: 7, pressingTiming: 8 })
+                  : scores(evaluationId, targetPosition, { activity: 8, stablePass: 8, buildUp: 8 }, { allAreaInvolvement: 8, spaceConnection: 8, activityRange: 8, fluidity: 8, allRoundContribution: 8 }),
+              traits: [
+                { id: `${evaluationId}:trait:teamwork`, evaluationId, key: "teamwork", score: 8 },
+                { id: `${evaluationId}:trait:vision`, evaluationId, key: "vision", score: 8 },
+              ],
+              highlights: [{ id: `${evaluationId}:highlight:passSense`, evaluationId, key: "passSense" }],
+            });
+          });
+      });
+  }
+  seedLastEvaluatorForPendingUser(qaFirstCardMatchId, "user:qa-first-card", {
+    "user:minsu": "dm",
+    "user:jihoon": "dm",
+    "user:hyunwoo": "dm",
+  }, 0);
+  seedLastEvaluatorForPendingUser(qaSecondCardMatchId, "user:qa-second-card", {
+    "user:minsu": "attack",
+    "user:jihoon": "dm",
+    "user:hyunwoo": "free",
+  }, 10);
   ["user:minsu", "user:jihoon", "user:hyunwoo"].forEach((evaluatorUserId, evaluatorIndex) => {
     ["user:rookie-demo", "user:minsu", "user:jihoon", "user:hyunwoo"]
       .filter((targetUserId) => targetUserId !== evaluatorUserId)
@@ -790,6 +900,34 @@
       { userId: "user:minsu", joinedAt: "2026-05-29T09:21:00.000Z" },
       { userId: "user:jihoon", joinedAt: "2026-05-29T09:22:00.000Z" },
       { userId: "user:hyunwoo", joinedAt: "2026-05-29T09:23:00.000Z" },
+    ],
+    evaluationDeadlineHours: 12,
+    awardVotingEnabled: false,
+  });
+  createMatch({
+    id: qaFirstCardMatchId,
+    title: "QA 첫 카드 생성 경기",
+    date: "2026-05-29T12:30:00.000Z",
+    location: "QA 데이터 풋살장",
+    participants: [
+      { userId: "user:qa-first-card", joinedAt: "2026-05-29T12:20:00.000Z", evaluationCompleted: false },
+      { userId: "user:minsu", joinedAt: "2026-05-29T12:21:00.000Z", evaluationCompleted: true },
+      { userId: "user:jihoon", joinedAt: "2026-05-29T12:22:00.000Z", evaluationCompleted: true },
+      { userId: "user:hyunwoo", joinedAt: "2026-05-29T12:23:00.000Z", evaluationCompleted: true },
+    ],
+    evaluationDeadlineHours: 12,
+    awardVotingEnabled: false,
+  });
+  createMatch({
+    id: qaSecondCardMatchId,
+    title: "QA 두 번째 카드 생성 경기",
+    date: "2026-05-29T12:50:00.000Z",
+    location: "QA 데이터 풋살장",
+    participants: [
+      { userId: "user:qa-second-card", joinedAt: "2026-05-29T12:40:00.000Z", evaluationCompleted: false },
+      { userId: "user:minsu", joinedAt: "2026-05-29T12:41:00.000Z", evaluationCompleted: true },
+      { userId: "user:jihoon", joinedAt: "2026-05-29T12:42:00.000Z", evaluationCompleted: true },
+      { userId: "user:hyunwoo", joinedAt: "2026-05-29T12:43:00.000Z", evaluationCompleted: true },
     ],
     evaluationDeadlineHours: 12,
     awardVotingEnabled: false,

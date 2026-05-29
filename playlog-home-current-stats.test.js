@@ -39,9 +39,11 @@ function renderAppWithData(currentStats, matchCards = null, monthlyCards = [], m
       generatedAt: "2026-05-23T15:00:00.000Z",
       overallRating: currentStats.currentOVR,
       overallChange: currentStats.ovrChange,
-      playStyle: "연결형 프리롤",
+      playStyle: currentStats.currentPlayStyle || "연결형 프리롤",
       playStyleCode: "Link Playmaker",
-      mainEvaluatedPosition: "free",
+      mainEvaluatedPosition: currentStats.currentMainPosition || "free",
+      radarData: currentStats.radarData,
+      positionAdaptation: currentStats.positionAdaptation,
     }] : []),
     activeEvaluationMatchId: matchFlow?.match.id,
     matches: matchFlow ? [matchFlow.match] : [],
@@ -83,6 +85,13 @@ assert.ok(live.get("#homeRadar").innerHTML.includes("83"));
 assert.ok(live.get("#cardList").innerHTML.includes("MATCH CARD"));
 assert.ok(live.get("#cardList").innerHTML.includes("상암 목요일 풋살"));
 assert.ok(live.get("#cardList").innerHTML.includes("OVR 82"));
+
+const currentFormWindow = renderAppWithData({ ...liveStats, currentOVR: 99 }, [
+  { userId: "user:seunghyun", matchId: "match:recent-only", generatedAt: "2026-05-27T00:00:00.000Z", overallRating: 70, playStyle: "연결형 프리롤", mainEvaluatedPosition: "free", evaluatorCount: 2, radarData: { activity: 70, gameSense: 70, pass: 70, ballControl: 70, movement: 70, mentality: 70 }, positionAdaptation: { free: { positionAverage: 7, adaptationRating: 79 } } },
+  { userId: "user:seunghyun", matchId: "match:too-old", generatedAt: "2026-02-01T00:00:00.000Z", overallRating: 99, playStyle: "무시할 유형", mainEvaluatedPosition: "attack", evaluatorCount: 5, radarData: { activity: 99, gameSense: 99, pass: 99, ballControl: 99, movement: 99, mentality: 99 }, positionAdaptation: { attack: { positionAverage: 9, adaptationRating: 90 } } },
+]);
+assert.equal(currentFormWindow.get("#homeOvr").textContent, 70);
+assert.equal(currentFormWindow.get("#homeFormBasis").textContent, "최근 1경기 기준 · 최근 60일 기준");
 
 const flow = renderAppWithData(liveStats, null, [], {
   match: {
@@ -192,6 +201,8 @@ const analysis = renderAppWithData(liveStats, [
     overallChange: 1,
     playStyle: "조율형 플레이메이커",
     mainEvaluatedPosition: "am",
+    selectedPositionSummary: { am: { count: 2 } },
+    radarData: { activity: 70, gameSense: 78, pass: 80, ballControl: 62, movement: 70, mentality: 78 },
     strengthsTop3: [{ key: "stablePass", label: "이전 패스", score: 7 }],
     weaknessesTop3: [{ key: "firstTouch", label: "이전 터치", score: 5 }],
     matchAnalysisText: "이전 경기 분석입니다.",
@@ -205,6 +216,8 @@ const analysis = renderAppWithData(liveStats, [
     overallChange: 4,
     playStyle: "연결형 프리롤",
     mainEvaluatedPosition: "free",
+    selectedPositionSummary: { free: { count: 3 }, dm: { count: 1 } },
+    radarData: { activity: 76, gameSense: 86, pass: 86, ballControl: 68, movement: 74, mentality: 82 },
     strengthsTop3: [
       { key: "stablePass", score: 9 },
       { key: "buildUp", score: 8.5 },
@@ -229,23 +242,43 @@ const analysis = renderAppWithData(liveStats, [
 analysis.get("#officialCard").listeners.click();
 const analysisHtml = analysis.get("#sheet").innerHTML;
 assert.equal(analysis.get(".growth-read small").textContent, "CURRENT FORM ANALYSIS");
-assert.equal(analysis.get(".growth-read strong").textContent, "상승: 빌드업 능력 +3 · 안정적 패스 +2.5 · 경기 조율 +2");
-assert.equal(analysis.get(".growth-read p").textContent, "하락: 집중력 -3 · 퍼스트터치 -2.5 · 침착성 -2");
-assert.ok(analysisHtml.includes("상승 스탯 TOP 3"));
-assert.ok(analysisHtml.includes("하락 스탯 TOP 3"));
-assert.ok(analysisHtml.includes("안정적 패스"));
-assert.ok(analysisHtml.includes("빌드업 능력"));
-assert.ok(analysisHtml.includes("경기 조율"));
-assert.ok(analysisHtml.includes("집중력"));
-assert.ok(analysisHtml.includes("퍼스트터치"));
-assert.ok(analysisHtml.includes("침착성"));
-assert.ok(analysisHtml.includes("+3"));
-assert.ok(analysisHtml.includes("+2.5"));
-assert.ok(analysisHtml.includes("-2.5"));
-assert.ok(analysisHtml.includes("-3"));
-assert.ok(analysisHtml.includes("78 → 82"));
-assert.ok(analysisHtml.includes("안정적 패스, 빌드업 능력과 공간 연결에서 좋은 평가를 받았습니다."));
+assert.equal(analysis.get(".growth-read strong").textContent, "패스 · 게임 센스 · 멘탈");
+assert.ok(analysis.get(".growth-read p").textContent.includes("최근 공식 경기들을 기준으로 현재 폼을 요약했습니다."));
+assert.ok(analysisHtml.includes("CURRENT FORM ANALYSIS"));
+assert.ok(analysisHtml.includes("현재 폼 강점 TOP3"));
+assert.ok(analysisHtml.includes("현재 폼 보완점 TOP3"));
+assert.ok(analysisHtml.includes("CURRENT POSITION IDENTITY"));
+assert.ok(analysisHtml.includes("최근 폼 공통 평가"));
+assert.ok(analysisHtml.includes("최근 폼 포지션 평가"));
+assert.ok(analysisHtml.includes("최근 폼 선택 성향"));
+assert.ok(analysisHtml.includes("패스"));
+assert.ok(analysisHtml.includes("게임 센스"));
+assert.ok(analysisHtml.includes("볼 컨트롤"));
+assert.ok(analysisHtml.includes("OVR 78"));
+assert.ok(analysisHtml.includes("최근 2경기 단순 평균 · 최근 60일 기준"));
+assert.ok(analysisHtml.includes("최근 60일 내 최대 최근 4경기 기준"));
 assert.ok(!analysisHtml.includes("이전 경기 분석입니다."));
+
+const subtleChangeAnalysis = renderAppWithData(liveStats, [{
+  userId: "user:seunghyun",
+  matchId: "match:subtle-changes",
+  generatedAt: "2026-05-27T00:00:00.000Z",
+  overallRating: 80,
+  playStyle: "연결형 프리롤",
+  mainEvaluatedPosition: "free",
+  strengthsTop3: [{ key: "stablePass", score: 8 }],
+  weaknessesTop3: [{ key: "dribbleImpact", score: 6 }],
+  analysisChanges: [
+    { key: "stablePass", diff: 0.5, comparisonMatchCount: 1 },
+    { key: "composure", diff: -0.5, comparisonMatchCount: 1 },
+  ],
+  matchAnalysisText: "소폭 변화 분석입니다.",
+}]);
+subtleChangeAnalysis.get("#officialCard").listeners.click();
+const subtleHtml = subtleChangeAnalysis.get("#sheet").innerHTML;
+assert.ok(subtleHtml.includes("CURRENT FORM ANALYSIS"));
+assert.ok(subtleHtml.includes("현재 폼 강점 TOP3"));
+assert.ok(subtleHtml.includes("현재 폼 보완점 TOP3"));
 
 const noChangeAnalysis = renderAppWithData(liveStats, [{
   userId: "user:seunghyun",
@@ -254,14 +287,17 @@ const noChangeAnalysis = renderAppWithData(liveStats, [{
   overallRating: 82,
   playStyle: "연결형 프리롤",
   mainEvaluatedPosition: "free",
+  radarData: { activity: 73, gameSense: 82, pass: 83, ballControl: 65, movement: 72, mentality: 80 },
   strengthsTop3: [{ key: "stablePass", score: 9 }, { key: "buildUp", score: 8 }, { key: "spaceConnection", score: 8 }],
   weaknessesTop3: [{ key: "dribbleImpact", score: 5 }, { key: "firstTouch", score: 6 }, { key: "activity", score: 6 }],
   analysisChanges: [],
   matchAnalysisText: "기존 강점 분석입니다.",
 }]);
 noChangeAnalysis.get("#officialCard").listeners.click();
-assert.ok(noChangeAnalysis.get("#sheet").innerHTML.includes("강점 TOP 3"));
-assert.equal(noChangeAnalysis.get(".growth-read strong").textContent, "안정적 패스 · 빌드업 능력 · 공간 연결");
+assert.ok(noChangeAnalysis.get("#sheet").innerHTML.includes("CURRENT FORM ANALYSIS"));
+assert.ok(noChangeAnalysis.get("#sheet").innerHTML.includes("현재 폼 강점 TOP3"));
+assert.ok(noChangeAnalysis.get("#sheet").innerHTML.includes("현재 폼 보완점 TOP3"));
+assert.equal(noChangeAnalysis.get(".growth-read strong").textContent, "패스 · 게임 센스 · 멘탈");
 
 const amLive = renderAppWithData({
   userId: "user:seunghyun",
@@ -282,10 +318,11 @@ assert.equal(fallback.get(".ovr-line .rise").hidden, true);
 assert.ok(fallback.get("#homeRadar").innerHTML.includes("활동성"));
 assert.ok(fallback.get("#recentMatches").innerHTML.includes("아직 완료된 경기가 없습니다."));
 assert.equal(fallback.get("#stepTitle").textContent, "경기 평가 리스트");
-assert.ok(fallback.get("#evaluationPane").innerHTML.includes("상암 목요일 풋살"));
+assert.ok(fallback.get("#evaluationPane").innerHTML.includes("진행 중인 평가가 없습니다."));
+assert.ok(fallback.get("#evaluationPane").innerHTML.includes("새 경기에 참여하면 평가를 받을 수 있습니다."));
 assert.equal(fallback.get("#homeMonthlyMeta").hidden, true);
 assert.equal(fallback.get("#homeMonthlyRadar").hidden, true);
 fallback.get("#officialCard").listeners.click();
-assert.ok(fallback.get("#sheet").innerHTML.includes("상승 스탯 TOP 3"));
+assert.equal(fallback.get("#toast").textContent, "아직 분석할 경기 기록이 없습니다.");
 
 console.log("playlog-home-current-stats tests passed");

@@ -128,6 +128,10 @@ assert.deepEqual(engine.calculateAnalysisChanges(latestAnalysisCard, priorAnalys
     currentScore: 9, previousRecentAverage: 6, diff: 3, comparisonMatchCount: 3,
   },
   {
+    key: "composure", label: "composure", category: "common",
+    currentScore: 8, previousRecentAverage: 7, diff: 1, comparisonMatchCount: 3,
+  },
+  {
     key: "buildUp", label: "buildUp", category: "common",
     currentScore: 5, previousRecentAverage: 7, diff: -2, comparisonMatchCount: 3,
   },
@@ -138,6 +142,10 @@ assert.deepEqual(engine.calculateAnalysisChanges(latestAnalysisCard, priorAnalys
     currentScore: 9, previousRecentAverage: 6, diff: 3, comparisonMatchCount: 2,
   },
   {
+    key: "composure", label: "composure", category: "common",
+    currentScore: 8, previousRecentAverage: 7, diff: 1, comparisonMatchCount: 2,
+  },
+  {
     key: "buildUp", label: "buildUp", category: "common",
     currentScore: 5, previousRecentAverage: 7.5, diff: -2.5, comparisonMatchCount: 2,
   },
@@ -146,6 +154,10 @@ assert.deepEqual(engine.calculateAnalysisChanges(latestAnalysisCard, priorAnalys
   {
     key: "stablePass", label: "stablePass", category: "common",
     currentScore: 9, previousRecentAverage: 6, diff: 3, comparisonMatchCount: 1,
+  },
+  {
+    key: "composure", label: "composure", category: "common",
+    currentScore: 8, previousRecentAverage: 7, diff: 1, comparisonMatchCount: 1,
   },
   {
     key: "buildUp", label: "buildUp", category: "common",

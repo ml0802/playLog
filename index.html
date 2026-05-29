@@ -16,7 +16,7 @@
         <div class="topline">
           <div>
             <p class="eyebrow">PLAYLOG</p>
-            <h1>안녕하세요, 승현님!</h1>
+            <h1 id="homeGreeting">안녕하세요!</h1>
             <p>오늘도 멋진 플레이 기대할게요.</p>
           </div>
           <button class="icon-button" data-toast="새 알림은 아직 없어요" type="button" aria-label="알림">⌁</button>
@@ -69,7 +69,7 @@
       <section class="content-view active" data-view="home">
         <div class="section-head">
           <h2>진행 중인 평가</h2>
-          <button data-toast="진행 중인 평가 1개가 있어요" type="button">전체 보기 ›</button>
+          <button id="activeMatchAllButton" data-toast="진행 중인 평가가 없습니다." type="button">전체 보기 ›</button>
         </div>
         <article class="match-progress">
           <div class="match-icon">⚽</div>
