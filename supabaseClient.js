@@ -636,14 +636,15 @@ async function updateMatchParticipantCompletion(matchId, userId, evaluationCompl
     .update({ evaluation_completed: evaluationCompleted === true })
     .eq("match_id", matchId)
     .eq("user_id", userId)
-    .select("*")
-    .single();
+    .select("*");
   if (error) throw error;
 
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("경기 참가자 평가 완료 상태를 업데이트하지 못했습니다.");
   const appMatch = officialData().matches.find((match) => match.id === matchId);
   const participant = appMatch?.participants?.find((item) => item.userId === userId);
-  if (participant) participant.evaluationCompleted = data.evaluation_completed === true;
-  return fromMatchParticipantRow(data);
+  if (participant) participant.evaluationCompleted = row.evaluation_completed === true;
+  return fromMatchParticipantRow(row);
 }
 
 async function recalculateMatchEvaluationCompletion(matchId) {
@@ -715,16 +716,17 @@ async function publishMatch(matchId, publishedAt = new Date().toISOString()) {
     .from("matches")
     .update({ status: "published", published_at: publishedAt })
     .eq("id", matchId)
-    .select("*")
-    .single();
+    .select("*");
   if (error) throw error;
 
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("경기 공개 상태를 업데이트하지 못했습니다.");
   const appMatch = officialData().matches.find((match) => match.id === matchId);
   if (appMatch) {
-    appMatch.status = data.status || "published";
-    appMatch.publishedAt = data.published_at;
+    appMatch.status = row.status || "published";
+    appMatch.publishedAt = row.published_at;
   }
-  return fromMatchRow(data, appMatch?.participants?.map((participant) => ({
+  return fromMatchRow(row, appMatch?.participants?.map((participant) => ({
     match_id: matchId,
     user_id: participant.userId,
     joined_at: participant.joinedAt,
