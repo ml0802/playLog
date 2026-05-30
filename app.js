@@ -23,6 +23,12 @@ const positionLabels = {
   defense: ["수비", "CB"],
   free: ["프리롤", "FR"],
 };
+import presetAttackUrl from "./assets/preset-attack.png";
+import presetCamUrl from "./assets/preset-cam.png";
+import presetCdmUrl from "./assets/preset-cdm.png";
+import presetDefenseUrl from "./assets/preset-defense.png";
+import presetFreeUrl from "./assets/preset-free.png";
+
 const playTypeCatalog = {
   attack: [
     ["침투형 공격수", "Advanced Forward · AF"],
@@ -88,11 +94,11 @@ const profilePresetLabels = {
   "free-4": "밸런스형",
 };
 const avatarSheets = {
-  attack: "./assets/preset-attack.png",
-  cam: "./assets/preset-cam.png",
-  cdm: "./assets/preset-cdm.png",
-  defense: "./assets/preset-defense.png",
-  free: "./assets/preset-free.png",
+  attack: presetAttackUrl,
+  cam: presetCamUrl,
+  cdm: presetCdmUrl,
+  defense: presetDefenseUrl,
+  free: presetFreeUrl,
 };
 const evaluationFields = window.PlaylogEngine.EVALUATION_FIELDS;
 let currentUserId = null;
@@ -290,59 +296,32 @@ function supabaseBridge() {
   return window.PlaylogSupabase?.isEnabled?.() ? window.PlaylogSupabase : null;
 }
 
-async function findUserByPlaylogIdAsync(playlogId) {
+function requireSupabaseBridge() {
   const bridge = supabaseBridge();
-  if (bridge) {
-    try {
-      return await bridge.findUserByPlaylogId(playlogId);
-    } catch (error) {
-      console.warn("Supabase user lookup failed. Falling back to local data.", error);
-    }
-  }
-  return window.PlaylogOfficialData?.findUserByPlaylogId?.(playlogId) || null;
+  if (!bridge) throw new Error("Supabase 클라이언트가 준비되지 않았습니다. 환경변수를 확인해주세요.");
+  return bridge;
+}
+
+function reportSupabaseError(error, fallbackMessage) {
+  console.error(fallbackMessage, error);
+  const detail = error?.message || error?.details || error?.hint || "";
+  showToast(detail ? `${fallbackMessage}: ${detail}` : fallbackMessage);
+}
+
+async function findUserByPlaylogIdAsync(playlogId) {
+  return requireSupabaseBridge().findUserByPlaylogId(playlogId);
 }
 
 async function saveUserApplicationAsync(payload) {
-  const bridge = supabaseBridge();
-  if (bridge) {
-    try {
-      return await bridge.saveUserApplication(payload);
-    } catch (error) {
-      console.warn("Supabase signup failed. Falling back to local data.", error);
-      showToast("Supabase 저장에 실패해 로컬 데이터로 임시 저장합니다.");
-    }
-  }
-  return window.PlaylogOfficialData?.saveUserApplication?.(payload) || null;
+  return requireSupabaseBridge().saveUserApplication(payload);
 }
 
 async function addFriendAsync(payload) {
-  const bridge = supabaseBridge();
-  if (bridge) {
-    try {
-      return await bridge.addFriend(payload);
-    } catch (error) {
-      console.warn("Supabase friend insert failed. Falling back to local data.", error);
-      showToast("Supabase 친구 저장에 실패해 로컬 데이터로 임시 저장합니다.");
-    }
-  }
   return window.PlaylogOfficialData?.addFriend?.(payload) || null;
 }
 
 async function updateUserStatusAsync(userId, status, approvedAt = null) {
-  const bridge = supabaseBridge();
-  if (bridge?.updateUserStatus) {
-    try {
-      return await bridge.updateUserStatus(userId, status, approvedAt);
-    } catch (error) {
-      console.warn("Supabase user status update failed. Falling back to local data.", error);
-    }
-  }
-  if (status === "approved") {
-    window.PlaylogOfficialData?.approveUser?.(userId, approvedAt || new Date().toISOString());
-  } else if (status === "rejected") {
-    window.PlaylogOfficialData?.rejectUser?.(userId);
-  }
-  return appUser(userId);
+  return requireSupabaseBridge().updateUserStatus(userId, status, approvedAt);
 }
 
 async function syncSupabaseUserContext(userId = currentUserId) {
@@ -351,7 +330,7 @@ async function syncSupabaseUserContext(userId = currentUserId) {
   try {
     await bridge.bootstrapUserData(userId);
   } catch (error) {
-    console.warn("Supabase context sync failed. Using local data.", error);
+    reportSupabaseError(error, "Supabase 사용자 동기화 실패");
   }
 }
 
@@ -2397,7 +2376,14 @@ function openSheet(kind, payload = null) {
       renderFriendSearchResult(`<p class="search-message">Playlog ID를 입력해주세요.</p>`);
       return;
     }
-    const user = await findUserByPlaylogIdAsync(query);
+    let user = null;
+    try {
+      user = await findUserByPlaylogIdAsync(query);
+    } catch (error) {
+      reportSupabaseError(error, "Supabase 사용자 검색 실패");
+      renderFriendSearchResult(`<p class="search-message">Supabase 사용자 검색에 실패했습니다. 콘솔 로그를 확인해주세요.</p>`);
+      return;
+    }
     if (!user || (!canSeeTestUsers() && isHiddenFromPublicSearch(user))) {
       renderFriendSearchResult(`<p class="search-message">해당 Playlog ID의 사용자를 찾을 수 없습니다.</p>`);
       return;
@@ -3245,7 +3231,13 @@ function renderAuth() {
     pane.querySelector("#loginByPlaylogId")?.addEventListener("click", async () => {
       const playlogId = normalizePlaylogId(pane.querySelector("#loginPlaylogId").value);
       const password = pane.querySelector("#loginPassword").value;
-      const found = await findUserByPlaylogIdAsync(playlogId);
+      let found = null;
+      try {
+        found = await findUserByPlaylogIdAsync(playlogId);
+      } catch (error) {
+        reportSupabaseError(error, "Supabase 로그인 조회 실패");
+        return;
+      }
       if (!found) {
         showToast("해당 Playlog ID의 사용자를 찾을 수 없습니다.");
         return;
@@ -3333,7 +3325,13 @@ function renderAuth() {
       showToast("비밀번호는 숫자 4자리로 입력해주세요.");
       return;
     }
-    const duplicatedUser = await findUserByPlaylogIdAsync(playlogId);
+    let duplicatedUser = null;
+    try {
+      duplicatedUser = await findUserByPlaylogIdAsync(playlogId);
+    } catch (error) {
+      reportSupabaseError(error, "Supabase Playlog ID 중복 확인 실패");
+      return;
+    }
     const duplicated = duplicatedUser && duplicatedUser.id !== currentUserId;
     if (duplicated) {
       showToast("이미 사용 중인 Playlog ID입니다.");
@@ -3344,18 +3342,24 @@ function renderAuth() {
       return;
     }
     const newUserId = currentUserId || `user:${playlogId}`;
-    const saved = await saveUserApplicationAsync({
-      id: newUserId,
-      playlogId,
-      name,
-      nickname,
-      mainPosition: pane.querySelector("#signupPosition").value,
-      preferredRole,
-      profilePreset: pane.querySelector("#signupPreset").value,
-      bio: pane.querySelector("#signupBio").value.trim(),
-      password,
-      createdAt: new Date().toISOString(),
-    });
+    let saved = null;
+    try {
+      saved = await saveUserApplicationAsync({
+        id: newUserId,
+        playlogId,
+        name,
+        nickname,
+        mainPosition: pane.querySelector("#signupPosition").value,
+        preferredRole,
+        profilePreset: pane.querySelector("#signupPreset").value,
+        bio: pane.querySelector("#signupBio").value.trim(),
+        password,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      reportSupabaseError(error, "Supabase 회원가입 저장 실패");
+      return;
+    }
     if (!saved) {
       showToast("이미 사용 중인 Playlog ID입니다.");
       return;
@@ -3550,12 +3554,22 @@ function renderFriends() {
       : `<article class="friend-card empty-friend-card"><i>＋</i><div><strong>친구가 아직 없습니다.</strong><p>친구를 추가하면 새 경기 참가자로 선택할 수 있어요.</p></div></article>`}
   `;
   document.querySelectorAll("[data-approve-user]").forEach((button) => button.addEventListener("click", async () => {
-    await updateUserStatusAsync(button.dataset.approveUser, "approved", new Date().toISOString());
+    try {
+      await updateUserStatusAsync(button.dataset.approveUser, "approved", new Date().toISOString());
+    } catch (error) {
+      reportSupabaseError(error, "Supabase 사용자 승인 실패");
+      return;
+    }
     showToast("사용자를 승인했습니다.");
     renderFriends();
   }));
   document.querySelectorAll("[data-reject-user]").forEach((button) => button.addEventListener("click", async () => {
-    await updateUserStatusAsync(button.dataset.rejectUser, "rejected");
+    try {
+      await updateUserStatusAsync(button.dataset.rejectUser, "rejected");
+    } catch (error) {
+      reportSupabaseError(error, "Supabase 사용자 거절 실패");
+      return;
+    }
     showToast("사용자를 거절했습니다.");
     renderFriends();
   }));

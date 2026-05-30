@@ -10,7 +10,6 @@ const supabase = supabaseUrl && supabaseAnonKey
 function officialData() {
   window.PlaylogOfficialData = window.PlaylogOfficialData || {};
   window.PlaylogOfficialData.users = window.PlaylogOfficialData.users || [];
-  window.PlaylogOfficialData.friends = window.PlaylogOfficialData.friends || [];
   return window.PlaylogOfficialData;
 }
 
@@ -55,26 +54,6 @@ function toUserRow(user) {
   };
 }
 
-function fromFriendRow(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    userId: row.user_id,
-    friendUserId: row.friend_user_id,
-    status: row.status,
-    createdAt: row.created_at,
-  };
-}
-
-function toFriendRow(friend) {
-  return {
-    user_id: friend.userId,
-    friend_user_id: friend.friendUserId,
-    status: friend.status || "accepted",
-    created_at: friend.createdAt || new Date().toISOString(),
-  };
-}
-
 function mergeUsers(users = []) {
   const data = officialData();
   users.filter(Boolean).forEach((user) => {
@@ -82,12 +61,6 @@ function mergeUsers(users = []) {
     if (index >= 0) data.users[index] = { ...data.users[index], ...user };
     else data.users.push(user);
   });
-}
-
-function replaceFriendsForUser(userId, friends = []) {
-  const data = officialData();
-  data.friends = data.friends.filter((friend) => friend.userId !== userId);
-  data.friends.push(...friends.filter(Boolean));
 }
 
 function assertClient() {
@@ -123,7 +96,7 @@ async function saveUserApplication(user) {
   assertClient();
   const { data, error } = await supabase
     .from("users")
-    .upsert(toUserRow(user), { onConflict: "id" })
+    .insert(toUserRow(user))
     .select("*")
     .single();
   if (error) throw error;
@@ -150,70 +123,17 @@ async function updateUserStatus(userId, status, approvedAt = null) {
   return saved;
 }
 
-async function refreshFriends(userId) {
-  assertClient();
-  const { data, error } = await supabase
-    .from("friends")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "accepted")
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  const friends = (data || []).map(fromFriendRow);
-  replaceFriendsForUser(userId, friends);
-
-  const friendIds = friends.map((friend) => friend.friendUserId).filter(Boolean);
-  if (friendIds.length) {
-    const { data: friendUsers, error: friendUserError } = await supabase
-      .from("users")
-      .select("*")
-      .in("id", friendIds);
-    if (friendUserError) throw friendUserError;
-    mergeUsers((friendUsers || []).map(fromUserRow));
-  }
-  return friends;
-}
-
-async function addFriend(friend) {
-  assertClient();
-  const row = toFriendRow(friend);
-  const { data: existing, error: findError } = await supabase
-    .from("friends")
-    .select("*")
-    .eq("user_id", row.user_id)
-    .eq("friend_user_id", row.friend_user_id)
-    .maybeSingle();
-  if (findError) throw findError;
-
-  const query = existing?.id
-    ? supabase.from("friends").update({ status: "accepted" }).eq("id", existing.id)
-    : supabase.from("friends").insert(row);
-  const { data, error } = await query.select("*").single();
-  if (error) throw error;
-
-  const saved = fromFriendRow(data);
-  const store = officialData();
-  const index = store.friends.findIndex((item) =>
-    item.userId === saved.userId && item.friendUserId === saved.friendUserId);
-  if (index >= 0) store.friends[index] = saved;
-  else store.friends.push(saved);
-  return saved;
-}
-
 async function bootstrapUserData(userId) {
   assertClient();
   await refreshUsers();
-  if (userId) await refreshFriends(userId);
 }
 
 window.PlaylogSupabase = {
   client: supabase,
   isEnabled: () => Boolean(supabase),
   refreshUsers,
-  refreshFriends,
   findUserByPlaylogId,
   saveUserApplication,
   updateUserStatus,
-  addFriend,
   bootstrapUserData,
 };
