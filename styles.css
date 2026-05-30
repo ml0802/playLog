@@ -35,20 +35,19 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 
 .hero {
-  padding: 16px 20px 26px;
+  padding: 28px 20px 26px;
   background: radial-gradient(circle at 78% 8%, rgba(99, 54, 230, .46), transparent 28%), linear-gradient(155deg, #080916 0%, #12112b 55%, #090918 100%);
   color: #fff;
   border-bottom-left-radius: 30px;
   border-bottom-right-radius: 30px;
 }
 
-.statusbar, .topline, .section-head, .analysis-top, .card-metrics, .tabbar, .friend-list article, .eval-target {
+.topline, .section-head, .analysis-top, .card-metrics, .tabbar, .friend-list article, .eval-target {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.statusbar { font-weight: 800; opacity: .95; margin-bottom: 26px; }
 .topline h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: 0; }
 .topline p, .eyebrow { margin: 0; color: rgba(255, 255, 255, .68); }
 .eyebrow { margin-bottom: 8px; font-size: 12px; font-weight: 900; letter-spacing: .08em; }
@@ -445,10 +444,10 @@ svg text { font-family: inherit; }
 .friend-highlight span { color: var(--purple); font-size: 12px; font-weight: 900; }
 .friend-highlight strong { display: block; margin-top: 6px; }
 .friend-highlight p { margin: 8px 0 0; color: var(--muted); }
-.my-friend-profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; }
+.my-friend-profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
 .my-friend-profile small { display: block; margin-top: 7px; color: var(--muted); line-height: 1.35; }
-.my-friend-profile .friend-count-line { margin-top: 3px; color: var(--ink); font-weight: 900; }
-.my-friend-actions { display: grid; gap: 6px; min-width: 92px; }
+.my-friend-profile .friend-count-line { margin-top: 3px; color: var(--muted); font-weight: 700; }
+.my-friend-actions { display: grid; align-content: center; gap: 6px; min-width: 92px; }
 .my-friend-profile button { border-radius: 999px; padding: 7px 10px; background: #ede7ff; color: var(--purple); font-size: 11px; font-weight: 900; white-space: nowrap; }
 .friend-list { display: grid; gap: 10px; }
 .friend-list article { padding: 14px; }
@@ -520,12 +519,12 @@ svg text { font-family: inherit; }
 .friend-profile-match-list { display: grid; gap: 8px; }
 .friend-profile-section > .friend-profile-monthly,
 .friend-profile-section > .friend-profile-note { margin-top: 2px; }
-.friend-profile-match, .friend-profile-monthly { width: 100%; display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: center; padding: 12px; border: 1px solid #e4ddfb; border-radius: 10px; background: linear-gradient(145deg, #fff, #fbf9ff); color: var(--ink); text-align: left; }
+.friend-profile-match, .friend-profile-monthly { width: 100%; display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: center; padding: 12px; border: 1px solid #e4ddfb; border-radius: 5px; background: linear-gradient(145deg, #fff, #fbf9ff); color: var(--ink); text-align: left; }
 .friend-profile-match span { color: var(--purple); font-size: 12px; font-weight: 950; }
 .friend-profile-match strong, .friend-profile-monthly strong { display: block; font-size: 14px; line-height: 1.28; word-break: keep-all; overflow-wrap: anywhere; }
 .friend-profile-match p, .friend-profile-monthly p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }
 .friend-profile-match small { grid-column: 1 / -1; display: flex; gap: 5px; flex-wrap: wrap; }
-.friend-profile-match small i { padding: 4px 7px; border-radius: 7px; background: #f0eaff; color: var(--purple); font-size: 10px; font-style: normal; font-weight: 900; word-break: keep-all; }
+.friend-profile-match small i { padding: 4px 7px; border-radius: 5px; background: #f0eaff; color: var(--purple); font-size: 10px; font-style: normal; font-weight: 900; word-break: keep-all; }
 .friend-profile-monthly { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
 .friend-profile-monthly span { color: var(--purple); font-size: 10px; font-weight: 950; letter-spacing: .05em; }
 .friend-profile-monthly b { font-size: 18px; }

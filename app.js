@@ -74,7 +74,7 @@ const profilePresetLabels = {
   "cdm-0": "후방 조율형 미드필더",
   "cdm-1": "압박형 미드필더",
   "cdm-2": "안정형 앵커",
-  "cdm-3": "활동형 올라운더",
+  "cdm-3": "박스투박스",
   "cdm-4": "자유 조율형 플레이메이커",
   "defense-0": "안정형 수비수",
   "defense-1": "빌드업형 수비수",
@@ -82,10 +82,10 @@ const profilePresetLabels = {
   "defense-3": "활동형 수비수",
   "defense-4": "예측형 수비수",
   "free-0": "전방위 로머",
-  "free-1": "연결형 프리롤",
-  "free-2": "유동형 프리롤",
-  "free-3": "에너지형 프리롤",
-  "free-4": "올라운드 플레이어",
+  "free-1": "로밍 플레이메이커",
+  "free-2": "공간 침투형",
+  "free-3": "에너지형 로머",
+  "free-4": "밸런스형",
 };
 const avatarSheets = {
   attack: "./assets/preset-attack.png",
@@ -2378,7 +2378,7 @@ function applyAvatarPreset() {
   const preset = currentAvatarPreset();
   const art = document.querySelector("#profileAvatar");
   art.setAttribute("style", presetStyle(preset));
-  art.setAttribute("aria-label", `${preset.name} 캐릭터 프리셋`);
+  art.setAttribute("aria-label", `${preset.label} 캐릭터 프리셋`);
 }
 
 function renderHome() {
@@ -3136,7 +3136,7 @@ function renderAuth() {
         <p>PLAYLOG SAMPLE</p>
         <h2>루키</h2>
         <span>공격수 · ST</span>
-        <strong>침투형 골게터</strong>
+        <strong>침투형 공격수</strong>
         <b>OVR 82</b>
         <div class="card-preview-tags"><i>득점력</i><i>침투</i><i>결정력</i></div>
       </div>
