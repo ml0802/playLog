@@ -17,6 +17,7 @@ function officialData() {
   window.PlaylogOfficialData.playerCurrentStats = window.PlaylogOfficialData.playerCurrentStats || [];
   window.PlaylogOfficialData.playerMonthlyCards = window.PlaylogOfficialData.playerMonthlyCards || [];
   window.PlaylogOfficialData.matchAwardVotes = window.PlaylogOfficialData.matchAwardVotes || [];
+  window.PlaylogOfficialData.selfReflections = window.PlaylogOfficialData.selfReflections || [];
   return window.PlaylogOfficialData;
 }
 
@@ -177,6 +178,46 @@ function toAwardVoteRow(vote) {
     reason: vote.reason || "",
     created_at: vote.createdAt || now,
     updated_at: vote.updatedAt || now,
+  };
+}
+
+function fromSelfReflectionRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    matchId: row.match_id,
+    selectedPosition: row.selected_position,
+    selfScores: row.self_scores || [],
+    selfTraits: row.self_traits || [],
+    selfHighlights: row.self_highlights || [],
+    satisfactionScore: Number(row.satisfaction_score),
+    feltStrength: row.felt_strength || "",
+    feltWeakness: row.felt_weakness || "",
+    nextGoal: row.next_goal || "",
+    memo: row.memo || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toSelfReflectionRow(reflection) {
+  const now = new Date().toISOString();
+  return {
+    id: reflection.id,
+    user_id: reflection.userId,
+    match_id: reflection.matchId || null,
+    selected_position: reflection.selectedPosition || "free",
+    self_scores: reflection.selfScores || [],
+    self_traits: reflection.selfTraits || [],
+    self_highlights: reflection.selfHighlights || [],
+    satisfaction_score: reflection.satisfactionScore,
+    felt_strength: reflection.feltStrength || "",
+    felt_weakness: reflection.feltWeakness || "",
+    next_goal: reflection.nextGoal || "",
+    memo: reflection.memo || "",
+    created_at: reflection.createdAt || now,
+    updated_at: reflection.updatedAt || now,
   };
 }
 
@@ -496,6 +537,23 @@ function mergeAwardVotes(votes = []) {
     );
     if (index >= 0) data.matchAwardVotes[index] = { ...data.matchAwardVotes[index], ...vote };
     else data.matchAwardVotes.push(vote);
+  });
+}
+
+function replaceSelfReflectionsForUser(userId, reflections = []) {
+  const data = officialData();
+  for (let index = data.selfReflections.length - 1; index >= 0; index -= 1) {
+    if (data.selfReflections[index]?.userId === userId) data.selfReflections.splice(index, 1);
+  }
+  reflections.filter(Boolean).forEach((reflection) => data.selfReflections.push(reflection));
+}
+
+function mergeSelfReflections(reflections = []) {
+  const data = officialData();
+  reflections.filter(Boolean).forEach((reflection) => {
+    const index = data.selfReflections.findIndex((item) => item.id === reflection.id);
+    if (index >= 0) data.selfReflections[index] = { ...data.selfReflections[index], ...reflection };
+    else data.selfReflections.push(reflection);
   });
 }
 
@@ -1024,6 +1082,37 @@ async function saveMatchAwardVote(vote) {
   return saved;
 }
 
+async function refreshSelfReflections(userId) {
+  assertClient();
+  const { data, error } = await supabase
+    .from("self_reflections")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    reportSupabaseQueryError("refreshSelfReflections:selectSelfReflections", error);
+    throw error;
+  }
+  const reflections = (data || []).map(fromSelfReflectionRow);
+  replaceSelfReflectionsForUser(userId, reflections);
+  return reflections;
+}
+
+async function saveSelfReflection(reflection) {
+  assertClient();
+  const { data, error } = await supabase
+    .from("self_reflections")
+    .upsert(toSelfReflectionRow(reflection), { onConflict: "id" })
+    .select("*");
+  if (error) {
+    reportSupabaseQueryError("saveSelfReflection:upsertSelfReflection", error);
+    throw error;
+  }
+  const saved = fromSelfReflectionRow(firstReturnedRow(data, "saveSelfReflection:upsertSelfReflection"));
+  mergeSelfReflections([saved]);
+  return saved;
+}
+
 async function refreshPlayerCards(userId) {
   assertClient();
   const { data: participantRows, error: participantsError } = await supabase
@@ -1124,6 +1213,7 @@ async function bootstrapUserData(userId) {
   await refreshMatches(userId);
   await refreshEvaluations(userId);
   await refreshAwardVotes(userId);
+  await refreshSelfReflections(userId);
   await refreshPlayerCards(userId);
 }
 
@@ -1145,6 +1235,8 @@ window.PlaylogSupabase = {
   saveEvaluation,
   refreshAwardVotes,
   saveMatchAwardVote,
+  refreshSelfReflections,
+  saveSelfReflection,
   refreshPlayerCards,
   upsertGeneratedCards,
   bootstrapUserData,

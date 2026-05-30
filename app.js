@@ -366,6 +366,10 @@ async function saveMatchAwardVoteAsync(payload) {
   return requireSupabaseBridge().saveMatchAwardVote(payload);
 }
 
+async function saveSelfReflectionAsync(payload) {
+  return requireSupabaseBridge().saveSelfReflection(payload);
+}
+
 function withUpsertedCard(cards, card) {
   const nextCards = (cards || []).filter((item) => item && item.id !== card.id);
   nextCards.push(card);
@@ -487,6 +491,11 @@ function disableLocalAwardVoteFallback() {
   if (!window.PlaylogOfficialData) return;
   window.PlaylogOfficialData.saveMatchAwardVote = async (payload) => saveMatchAwardVoteAsync(payload);
   window.PlaylogOfficialData.savePOMVote = async (payload) => saveMatchAwardVoteAsync({ ...payload, type: "pom" });
+}
+
+function disableLocalSelfReflectionFallback() {
+  if (!window.PlaylogOfficialData) return;
+  window.PlaylogOfficialData.saveSelfReflection = async (payload) => saveSelfReflectionAsync(payload);
 }
 
 async function updateUserStatusAsync(userId, status, approvedAt = null) {
@@ -3318,7 +3327,7 @@ function renderReflection() {
     reflectionStep = Math.max(0, reflectionStep - 1);
     renderReflection();
   });
-  pane.querySelector("[data-reflection-next]")?.addEventListener("click", () => {
+  pane.querySelector("[data-reflection-next]")?.addEventListener("click", async () => {
     if (reflectionStep === 0 && !reflectionPosition) {
       showToast("회고 포지션을 먼저 선택해주세요.");
       return;
@@ -3332,7 +3341,12 @@ function renderReflection() {
       return;
     }
     if (reflectionStep === reflectionSteps.length - 1) {
-      window.PlaylogOfficialData.saveSelfReflection(buildSelfReflection(`self-reflection:${Date.now()}`));
+      try {
+        await saveSelfReflectionAsync(buildSelfReflection(`self-reflection:${Date.now()}`));
+      } catch (error) {
+        reportSupabaseError(error, "Supabase 회고 저장 실패");
+        return;
+      }
       showToast("개인 회고가 저장되었습니다");
       reflectionStep = reflectionSteps.length;
     } else {
@@ -3934,6 +3948,7 @@ disableLocalFriendFallback();
 disableLocalMatchFallback();
 disableLocalEvaluationFallback();
 disableLocalAwardVoteFallback();
+disableLocalSelfReflectionFallback();
 bindInteractions();
 if (isCurrentUserApproved()) {
   renderHome();
