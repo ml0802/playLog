@@ -494,6 +494,16 @@ function assertClient() {
   if (!supabase) throw new Error("Supabase 환경변수가 설정되지 않았습니다.");
 }
 
+function reportSupabaseQueryError(context, error) {
+  if (error) console.error(`[PlaylogSupabase] ${context}`, error);
+}
+
+function firstReturnedRow(data, context) {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error(`${context}: Supabase returned no rows`);
+  return row;
+}
+
 async function refreshUsers() {
   assertClient();
   const { data, error } = await supabase
@@ -637,10 +647,12 @@ async function updateMatchParticipantCompletion(matchId, userId, evaluationCompl
     .eq("match_id", matchId)
     .eq("user_id", userId)
     .select("*");
-  if (error) throw error;
+  if (error) {
+    reportSupabaseQueryError("updateMatchParticipantCompletion", error);
+    throw error;
+  }
 
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error("경기 참가자 평가 완료 상태를 업데이트하지 못했습니다.");
+  const row = firstReturnedRow(data, "updateMatchParticipantCompletion");
   const appMatch = officialData().matches.find((match) => match.id === matchId);
   const participant = appMatch?.participants?.find((item) => item.userId === userId);
   if (participant) participant.evaluationCompleted = row.evaluation_completed === true;
@@ -653,7 +665,10 @@ async function recalculateMatchEvaluationCompletion(matchId) {
     .from("match_participants")
     .select("*")
     .eq("match_id", matchId);
-  if (participantsError) throw participantsError;
+  if (participantsError) {
+    reportSupabaseQueryError("recalculateMatchEvaluationCompletion:selectParticipants", participantsError);
+    throw participantsError;
+  }
 
   const participantUserIds = (participantRows || []).map((participant) => participant.user_id).filter(Boolean);
   const expectedActiveEvaluationCount = participantUserIds.length * Math.max(participantUserIds.length - 1, 0);
@@ -663,7 +678,10 @@ async function recalculateMatchEvaluationCompletion(matchId) {
     .select("evaluator_user_id,target_user_id")
     .eq("match_id", matchId)
     .eq("is_active", true);
-  if (evaluationsError) throw evaluationsError;
+  if (evaluationsError) {
+    reportSupabaseQueryError("recalculateMatchEvaluationCompletion:selectActiveEvaluations", evaluationsError);
+    throw evaluationsError;
+  }
 
   const activePairs = new Set((activeEvaluationRows || [])
     .filter((evaluation) =>
@@ -686,7 +704,10 @@ async function recalculateMatchEvaluationCompletion(matchId) {
       .eq("match_id", matchId)
       .eq("user_id", userId)
       .then(({ error }) => {
-        if (error) throw error;
+        if (error) {
+          reportSupabaseQueryError("recalculateMatchEvaluationCompletion:updateParticipant", error);
+          throw error;
+        }
       }),
   ));
 
@@ -717,10 +738,12 @@ async function publishMatch(matchId, publishedAt = new Date().toISOString()) {
     .update({ status: "published", published_at: publishedAt })
     .eq("id", matchId)
     .select("*");
-  if (error) throw error;
+  if (error) {
+    reportSupabaseQueryError("publishMatch", error);
+    throw error;
+  }
 
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error("경기 공개 상태를 업데이트하지 못했습니다.");
+  const row = firstReturnedRow(data, "publishMatch");
   const appMatch = officialData().matches.find((match) => match.id === matchId);
   if (appMatch) {
     appMatch.status = row.status || "published";
@@ -800,24 +823,36 @@ async function saveEvaluation(evaluation) {
   const { data: savedEvaluationRow, error: insertEvaluationError } = await supabase
     .from("evaluations")
     .insert(toEvaluationRow(versioned, { isActive: false, version }))
-    .select("*")
-    .single();
-  if (insertEvaluationError) throw insertEvaluationError;
+    .select("*");
+  if (insertEvaluationError) {
+    reportSupabaseQueryError("saveEvaluation:insertEvaluation", insertEvaluationError);
+    throw insertEvaluationError;
+  }
+  const savedEvaluation = firstReturnedRow(savedEvaluationRow, "saveEvaluation:insertEvaluation");
 
   const scoreRows = toEvaluationScoreRows(versioned);
   if (scoreRows.length) {
     const { error } = await supabase.from("evaluation_scores").insert(scoreRows);
-    if (error) throw error;
+    if (error) {
+      reportSupabaseQueryError("saveEvaluation:insertScores", error);
+      throw error;
+    }
   }
   const traitRows = toEvaluationTraitRows(versioned);
   if (traitRows.length) {
     const { error } = await supabase.from("evaluation_traits").insert(traitRows);
-    if (error) throw error;
+    if (error) {
+      reportSupabaseQueryError("saveEvaluation:insertTraits", error);
+      throw error;
+    }
   }
   const highlightRows = toEvaluationHighlightRows(versioned);
   if (highlightRows.length) {
     const { error } = await supabase.from("evaluation_highlights").insert(highlightRows);
-    if (error) throw error;
+    if (error) {
+      reportSupabaseQueryError("saveEvaluation:insertHighlights", error);
+      throw error;
+    }
   }
 
   const activeIds = (sameRows || []).filter((row) => row.is_active !== false).map((row) => row.id);
@@ -826,18 +861,23 @@ async function saveEvaluation(evaluation) {
       .from("evaluations")
       .update({ is_active: false, updated_at: timestamp })
       .in("id", activeIds);
-    if (error) throw error;
+    if (error) {
+      reportSupabaseQueryError("saveEvaluation:deactivatePrevious", error);
+      throw error;
+    }
   }
 
   const { data: activatedEvaluationRow, error: activateError } = await supabase
     .from("evaluations")
     .update({ is_active: true, updated_at: timestamp })
-    .eq("id", savedEvaluationRow.id)
-    .select("*")
-    .single();
-  if (activateError) throw activateError;
+    .eq("id", savedEvaluation.id)
+    .select("*");
+  if (activateError) {
+    reportSupabaseQueryError("saveEvaluation:activateCurrent", activateError);
+    throw activateError;
+  }
 
-  const saved = fromEvaluationRow(activatedEvaluationRow, scoreRows, traitRows, highlightRows);
+  const saved = fromEvaluationRow(firstReturnedRow(activatedEvaluationRow, "saveEvaluation:activateCurrent"), scoreRows, traitRows, highlightRows);
   mergeEvaluations([saved]);
   return saved;
 }
@@ -897,30 +937,36 @@ async function upsertGeneratedCards({ matchCard = null, currentStats = null, mon
     const { data, error } = await supabase
       .from("player_match_cards")
       .upsert(toPlayerMatchCardRow(matchCard), { onConflict: "id" })
-      .select("*")
-      .single();
-    if (error) throw error;
-    savedMatchCard = fromPlayerMatchCardRow(data);
+      .select("*");
+    if (error) {
+      reportSupabaseQueryError("upsertGeneratedCards:player_match_cards", error);
+      throw error;
+    }
+    savedMatchCard = fromPlayerMatchCardRow(firstReturnedRow(data, "upsertGeneratedCards:player_match_cards"));
   }
 
   if (currentStats) {
     const { data, error } = await supabase
       .from("player_current_stats")
       .upsert(toPlayerCurrentStatsRow(currentStats), { onConflict: "user_id" })
-      .select("*")
-      .single();
-    if (error) throw error;
-    savedCurrentStats = fromPlayerCurrentStatsRow(data);
+      .select("*");
+    if (error) {
+      reportSupabaseQueryError("upsertGeneratedCards:player_current_stats", error);
+      throw error;
+    }
+    savedCurrentStats = fromPlayerCurrentStatsRow(firstReturnedRow(data, "upsertGeneratedCards:player_current_stats"));
   }
 
   if (monthlyCard) {
     const { data, error } = await supabase
       .from("player_monthly_cards")
       .upsert(toPlayerMonthlyCardRow(monthlyCard), { onConflict: "user_id,month_key" })
-      .select("*")
-      .single();
-    if (error) throw error;
-    savedMonthlyCard = fromPlayerMonthlyCardRow(data);
+      .select("*");
+    if (error) {
+      reportSupabaseQueryError("upsertGeneratedCards:player_monthly_cards", error);
+      throw error;
+    }
+    savedMonthlyCard = fromPlayerMonthlyCardRow(firstReturnedRow(data, "upsertGeneratedCards:player_monthly_cards"));
   }
 
   mergePlayerMatchCards([savedMatchCard]);
