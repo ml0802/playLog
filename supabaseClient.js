@@ -759,6 +759,9 @@ async function publishMatch(matchId, publishedAt = new Date().toISOString()) {
     row = Array.isArray(selectedRows) ? selectedRows[0] : selectedRows;
   }
   if (!row) throw new Error(`publishMatch: no match row found for id ${matchId}`);
+  if (row.status !== "published") {
+    throw new Error(`publishMatch: match ${matchId} status is still ${row.status || "empty"} after update. Check public.matches UPDATE RLS policy.`);
+  }
   const appMatch = officialData().matches.find((match) => match.id === matchId);
   if (appMatch) {
     appMatch.status = row.status || "published";
