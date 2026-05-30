@@ -101,6 +101,7 @@ const avatarSheets = {
   free: presetFreeUrl,
 };
 const evaluationFields = window.PlaylogEngine.EVALUATION_FIELDS;
+const savedLoginStorageKey = "playlog.currentUser";
 let currentUserId = null;
 const currentMatchId = window.PlaylogOfficialData?.activeEvaluationMatchId || "match:sangam-2026-05-23";
 let selectedMatchId = currentMatchId;
@@ -285,7 +286,37 @@ function appUser(userId = currentUserId) {
 
 function displayUserName(userId) {
   const user = appUser(userId);
-  return user?.nickname || user?.name || userNames[userId] || userId;
+  return user?.nickname || user?.name || user?.playlogId || userNames[userId] || userId;
+}
+
+function saveLoginSession(userId) {
+  const user = appUser(userId);
+  if (!user || user.status !== "approved" || isRookieDemoSessionUser(userId)) return;
+  try {
+    localStorage.setItem(savedLoginStorageKey, JSON.stringify({
+      userId: user.id,
+      playlogId: user.playlogId || "",
+    }));
+  } catch (error) {
+    console.error("로그인 세션 저장 실패", error);
+  }
+}
+
+function clearLoginSession() {
+  try {
+    localStorage.removeItem(savedLoginStorageKey);
+  } catch (error) {
+    console.error("로그인 세션 삭제 실패", error);
+  }
+}
+
+function readLoginSession() {
+  try {
+    return JSON.parse(localStorage.getItem(savedLoginStorageKey) || "null");
+  } catch {
+    clearLoginSession();
+    return null;
+  }
 }
 
 function normalizePlaylogId(value = "") {
@@ -512,6 +543,35 @@ async function syncSupabaseUserContext(userId = currentUserId) {
   }
 }
 
+async function restoreSavedLogin() {
+  const session = readLoginSession();
+  if (!session?.userId && !session?.playlogId) return false;
+  const bridge = supabaseBridge();
+  if (!bridge) {
+    clearLoginSession();
+    return false;
+  }
+  try {
+    let user = null;
+    if (session.playlogId) user = await findUserByPlaylogIdAsync(session.playlogId);
+    if (!user && session.userId) {
+      await bridge.refreshUsers();
+      user = appUser(session.userId);
+    }
+    if (!user || user.status !== "approved") {
+      clearLoginSession();
+      return false;
+    }
+    await syncSupabaseUserContext(user.id);
+    loginAs(user.id, { persist: true });
+    return true;
+  } catch (error) {
+    console.error("Supabase 자동 로그인 검증 실패", error);
+    clearLoginSession();
+    return false;
+  }
+}
+
 function signupRoleOptionsHtml(positionKey, selectedRole = "") {
   const options = signupRoleOptions[positionKey] || signupRoleOptions.free;
   return `<option value="">선택하세요</option>${options.map((role) => `<option value="${role}" ${selectedRole === role ? "selected" : ""}>${role}</option>`).join("")}`;
@@ -622,10 +682,10 @@ function startRookieDemoSession() {
     .filter((reflection) => reflection.userId === baseUserId || baseMatchIds.has(reflection.matchId))
     .forEach((reflection) => data.selfReflections.push(copy(reflection)));
   activeRookieSessionId = sessionId;
-  loginAs(sessionId);
+  loginAs(sessionId, { persist: false });
 }
 
-function loginAs(userId) {
+function loginAs(userId, { persist = true } = {}) {
   currentUserId = userId;
   selectedAvatar = appUser(userId)?.profilePreset || "free-1";
   selectedFriendProfileId = null;
@@ -636,6 +696,7 @@ function loginAs(userId) {
   if (nextMatch) selectedMatchId = nextMatch.id;
   authMode = "landing";
   if (isCurrentUserApproved()) {
+    if (persist) saveLoginSession(userId);
     renderHome();
     renderEvaluation();
     renderReflection();
@@ -649,6 +710,7 @@ function loginAs(userId) {
 
 function logout() {
   const shouldCleanupRookieSession = activeRookieSessionId && currentUserId === activeRookieSessionId;
+  clearLoginSession();
   currentUserId = null;
   selectedAvatar = "free-1";
   selectedFriendProfileId = null;
@@ -681,7 +743,7 @@ function evaluationTargetPlayers() {
     return fallbackPlayers.map((name) => ({ name, userId: playerIds[name] }));
   }
   return targets.map((participant) => ({
-    name: userNames[participant.userId] || participant.userId,
+    name: displayUserName(participant.userId),
     userId: participant.userId,
   }));
 }
@@ -1003,14 +1065,14 @@ function renderActiveMatchProgress() {
   if (waiting) {
     waitingElement.textContent = pomResult?.winnerUserIds?.length || nextStarResult?.winnerUserIds?.length
       ? [
-        pomResult?.winnerUserIds?.length ? `POM: ${pomResult.winnerUserIds.map((id) => userNames[id] || id).join(" · ")}` : null,
-        nextStarResult?.winnerUserIds?.length ? `NEXT STAR: ${nextStarResult.winnerUserIds.map((id) => userNames[id] || id).join(" · ")}` : null,
+        pomResult?.winnerUserIds?.length ? `POM: ${pomResult.winnerUserIds.map(displayUserName).join(" · ")}` : null,
+        nextStarResult?.winnerUserIds?.length ? `NEXT STAR: ${nextStarResult.winnerUserIds.map(displayUserName).join(" · ")}` : null,
       ].filter(Boolean).join(" / ")
       : `${waiting.label} · 평가가 끝나면 선수카드가 열립니다`;
   }
   document.querySelector("#activeMatchFaces").setAttribute("aria-label", `참가자 ${progress.totalCount}명 중 ${progress.completedCount}명 완료`);
   document.querySelector("#activeMatchFaces").innerHTML = match.participants.map((participant) => {
-    const initial = (userNames[participant.userId] || "?").slice(0, 1);
+    const initial = displayUserName(participant.userId).slice(0, 1);
     return participant.evaluationCompleted ? `<span>${initial}</span>` : "<i></i>";
   }).join("");
   document.querySelector("#activeMatchProgress").setAttribute("style", `--progress: ${progressPercent}`);
@@ -2116,7 +2178,7 @@ function matchResultTemplate() {
       .map((vote) => `<li>${escapeHtml(vote.reason)}</li>`)
       .join("");
     const winners = result?.winnerUserIds?.length
-      ? result.winnerUserIds.map((id) => userNames[id] || id).join(" · ")
+      ? result.winnerUserIds.map(displayUserName).join(" · ")
       : "공개 후 집계";
     return `<section class="result-section"><div class="result-section-head">${title}<span>${result?.voteCount || 0}표</span></div><p>${winners}</p>${reasons ? `<ul class="result-reasons">${reasons}</ul>` : ""}</section>`;
   };
@@ -2159,7 +2221,8 @@ function matchResultDetailTemplate() {
       <div class="result-section-head">참가자 경기 카드 <span>${participantCards.length}</span></div>
       <div class="match-result-cards">${participantCards.map((card) => {
         const identity = representativeMatchIdentity(card);
-        return `<button class="match-result-player" data-match-result-card="${card.matchId}" data-card-user="${card.userId}" type="button"><i>${(userNames[card.userId] || "?").slice(0, 1)}</i><span><strong>${userNames[card.userId] || card.userId}</strong><small>${identity.label} · ${identity.code} · ${identity.playStyle}</small></span><b>OVR ${card.overallRating}</b></button>`;
+        const name = displayUserName(card.userId);
+        return `<button class="match-result-player" data-match-result-card="${card.matchId}" data-card-user="${card.userId}" type="button"><i>${name.slice(0, 1)}</i><span><strong>${name}</strong><small>${identity.label} · ${identity.code} · ${identity.playStyle}</small></span><b>OVR ${card.overallRating}</b></button>`;
       }).join("") || "<p>공개된 참가자 카드가 아직 없습니다.</p>"}</div>
     </section>
     <button class="secondary full" data-open-match-result-summary type="button">결과 요약으로 돌아가기</button>
@@ -2173,7 +2236,7 @@ function awardSummaryCard(title, result, type) {
     .find((card) => card.matchId === selectedMatchId && card.userId === winnerId && isPublishedMatchCard(card))).filter(Boolean);
   const identity = winnerCards[0] ? representativeMatchIdentity(winnerCards[0]) : null;
   const winnerNames = winnerIds.length
-    ? winnerIds.map((winnerId) => userNames[winnerId] || winnerId).join(" · ")
+    ? winnerIds.map(displayUserName).join(" · ")
     : "공개 후 집계";
   const winnerMeta = identity
     ? `${identity.label} · ${identity.code} · ${identity.playStyle}`
@@ -2262,8 +2325,9 @@ function renderMatchResult() {
           const identity = representativeMatchIdentity(card);
           const strengths = participantStrengthTags(card, 3);
           const comments = participantCommentPreview(card, 3);
+          const name = displayUserName(card.userId);
           return `<button class="match-result-row" data-match-result-page-card="${card.matchId}" data-card-user="${card.userId}" type="button">
-            <div class="match-result-row-top"><i>${(userNames[card.userId] || "?").slice(0, 1)}</i><span><strong>${userNames[card.userId] || card.userId}</strong><small>${identity.label} · ${identity.code} · ${identity.playStyle}</small></span><b>OVR ${card.overallRating}</b></div>
+            <div class="match-result-row-top"><i>${name.slice(0, 1)}</i><span><strong>${name}</strong><small>${identity.label} · ${identity.code} · ${identity.playStyle}</small></span><b>OVR ${card.overallRating}</b></div>
             ${strengths.length ? `<div class="match-result-strengths"><small>대표 강점</small>${strengths.map((tag) => `<em>${tag}</em>`).join("")}</div>` : ""}
             ${comments.length ? `<div class="match-result-row-comments">${comments.map((comment) => `<p>${escapeHtml(comment)}</p>`).join("")}</div>` : ""}
           </button>`;
@@ -2793,7 +2857,7 @@ function enterEvaluationFlow(match) {
     return;
   }
   if (remaining.length) {
-    selectedPlayer = userNames[remaining[0].userId] || remaining[0].userId;
+    selectedPlayer = displayUserName(remaining[0].userId);
   }
   loadEvaluationDraft(activeEvaluationForTarget(selectedPlayerId()));
   loadAwardDraft();
@@ -2984,7 +3048,7 @@ function renderEvaluation() {
     pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>${completeTitle}</h2><p>${completeCopy}</p>${awardNote}<div class="self-result"><span>${selectedPlayer} ${resultReady ? "생성 OVR" : "결과 상태"}</span><strong>${resultReady ? (lastGeneratedCard?.overallRating || "-") : "대기"}</strong></div><button class="primary full" data-complete-action type="button">${actionLabel}</button>${match && remaining.length === 0 ? '<button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요?</button>' : ""}</div>`;
     pane.querySelector("[data-complete-action]")?.addEventListener("click", () => {
       if (remaining.length) {
-        selectedPlayer = userNames[remaining[0].userId] || remaining[0].userId;
+        selectedPlayer = displayUserName(remaining[0].userId);
         loadEvaluationDraft(activeEvaluationForTarget(selectedPlayerId()));
         resetAwardDraft();
         justCompletedAwards = false;
@@ -3944,13 +4008,17 @@ disableLocalEvaluationFallback();
 disableLocalAwardVoteFallback();
 disableLocalSelfReflectionFallback();
 bindInteractions();
-if (isCurrentUserApproved()) {
-  renderHome();
-  renderEvaluation();
-  renderReflection();
-  renderCards();
-  renderFriends();
-} else {
-  setView("auth");
-}
+(async function initializeApp() {
+  const restored = await restoreSavedLogin();
+  if (restored) return;
+  if (isCurrentUserApproved()) {
+    renderHome();
+    renderEvaluation();
+    renderReflection();
+    renderCards();
+    renderFriends();
+  } else {
+    setView("auth");
+  }
+})();
 
