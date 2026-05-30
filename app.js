@@ -405,9 +405,21 @@ async function saveGeneratedCardsForParticipant(matchId, userId, generatedAt) {
   if (match?.status !== "published") {
     throw new Error("공개되지 않은 경기의 선수카드는 저장할 수 없습니다.");
   }
+  console.info("Supabase 카드 생성 시작", { matchId, userId, generatedAt });
   const bundle = buildGeneratedCardBundle({ matchId, userId, generatedAt });
-  if (!bundle) return null;
-  return upsertGeneratedCardsAsync(bundle);
+  if (!bundle) {
+    console.warn("Supabase 카드 생성 bundle 없음", { matchId, userId });
+    return null;
+  }
+  const saved = await upsertGeneratedCardsAsync(bundle);
+  console.info("Supabase 카드 upsert 완료", {
+    matchId,
+    userId,
+    matchCardId: saved?.matchCard?.id,
+    hasCurrentStats: Boolean(saved?.currentStats),
+    hasMonthlyCard: Boolean(saved?.monthlyCard),
+  });
+  return saved;
 }
 
 async function syncMatchCompletionAndPublish(evaluation) {
@@ -434,12 +446,31 @@ async function syncMatchCompletionAndPublish(evaluation) {
     throw new Error(`경기 공개 상태 동기화에 실패했습니다: ${evaluation.matchId}`);
   }
   const generatedCards = [];
-  for (const participant of publishedMatch.participants || completion.participants || []) {
-    if (participant.evaluationCompleted !== true) continue;
-    const savedCards = await saveGeneratedCardsForParticipant(evaluation.matchId, participant.userId, publishedAt);
+  const cardParticipants = (completion.participants?.length ? completion.participants : publishedMatch.participants || [])
+    .filter((participant) => participant.evaluationCompleted === true);
+  console.info("Supabase 공개 후 카드 생성 대상", {
+    matchId: evaluation.matchId,
+    participants: cardParticipants,
+    publishedParticipants: publishedMatch.participants,
+    completionParticipants: completion.participants,
+  });
+  for (const participant of cardParticipants) {
+    let savedCards = null;
+    try {
+      savedCards = await saveGeneratedCardsForParticipant(evaluation.matchId, participant.userId, publishedAt);
+    } catch (error) {
+      console.error("Supabase 카드 upsert 실패", { matchId: evaluation.matchId, userId: participant.userId, error });
+      throw error;
+    }
     if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
   }
-  await refreshPlayerCardsAsync(currentUserId);
+  const refreshedCards = await refreshPlayerCardsAsync(currentUserId);
+  console.info("Supabase 카드 refresh 완료", {
+    matchId: evaluation.matchId,
+    generatedCount: generatedCards.length,
+    refreshedMatchCards: refreshedCards?.matchCards?.filter((card) => card.matchId === evaluation.matchId).length || 0,
+    localMatchCards: (window.PlaylogOfficialData?.playerMatchCards || []).filter((card) => card.matchId === evaluation.matchId).length,
+  });
   return { published: true, generatedCards };
 }
 
@@ -2161,13 +2192,23 @@ function awardSummaryCard(title, result, type) {
 function matchResultParticipantCards() {
   const match = activeMatchRecord();
   const participantIds = match?.participants?.map((participant) => participant.userId) || [];
-  return (window.PlaylogOfficialData?.playerMatchCards || [])
+  const cards = (window.PlaylogOfficialData?.playerMatchCards || [])
     .filter((card) => card && card.matchId === selectedMatchId && isPublishedMatchCard(card))
     .sort((left, right) => {
       const leftIndex = participantIds.indexOf(left.userId);
       const rightIndex = participantIds.indexOf(right.userId);
       return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
     });
+  if (!cards.length) {
+    console.warn("MATCH RESULT 참가자 카드 없음", {
+      selectedMatchId,
+      matchStatus: match?.status,
+      participantIds,
+      localCardsForMatch: (window.PlaylogOfficialData?.playerMatchCards || [])
+        .filter((card) => card?.matchId === selectedMatchId),
+    });
+  }
+  return cards;
 }
 
 function openMatchResultView(mode = "summary", card = null) {
