@@ -334,6 +334,15 @@ function disableLocalMatchFallback() {
   window.PlaylogOfficialData.createMatch = async (payload) => createMatchAsync(payload);
 }
 
+async function saveEvaluationAsync(payload) {
+  return requireSupabaseBridge().saveEvaluation(payload);
+}
+
+function disableLocalEvaluationFallback() {
+  if (!window.PlaylogOfficialData) return;
+  window.PlaylogOfficialData.saveEvaluation = async (payload) => saveEvaluationAsync(payload);
+}
+
 async function updateUserStatusAsync(userId, status, approvedAt = null) {
   return requireSupabaseBridge().updateUserStatus(userId, status, approvedAt);
 }
@@ -2877,7 +2886,7 @@ function renderEvaluation() {
     currentStep += 1;
     renderEvaluation();
   });
-  pane.querySelector("[data-next]")?.addEventListener("click", () => {
+  pane.querySelector("[data-next]")?.addEventListener("click", async () => {
     if (currentStep === 1 && !selectedPosition) {
       showToast("포지션을 먼저 선택해주세요.");
       return;
@@ -2892,7 +2901,13 @@ function renderEvaluation() {
     }
     if (currentStep === 5) {
       const evaluation = buildEvaluation(`evaluation:ui:${Date.now()}`);
-      lastGeneratedCard = window.PlaylogOfficialData.saveEvaluation(evaluation);
+      try {
+        await saveEvaluationAsync(evaluation);
+      } catch (error) {
+        reportSupabaseError(error, "Supabase 평가 저장 실패");
+        return;
+      }
+      lastGeneratedCard = null;
       showToast("평가가 자동 저장되었습니다");
       currentStep = activeMatchRecord() ? 6 : 7;
     } else {
@@ -3741,6 +3756,7 @@ window.PlaylogApp = {
 
 disableLocalFriendFallback();
 disableLocalMatchFallback();
+disableLocalEvaluationFallback();
 bindInteractions();
 if (isCurrentUserApproved()) {
   renderHome();

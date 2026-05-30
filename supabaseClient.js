@@ -12,6 +12,7 @@ function officialData() {
   window.PlaylogOfficialData.users = window.PlaylogOfficialData.users || [];
   window.PlaylogOfficialData.friends = window.PlaylogOfficialData.friends || [];
   window.PlaylogOfficialData.matches = window.PlaylogOfficialData.matches || [];
+  window.PlaylogOfficialData.evaluations = window.PlaylogOfficialData.evaluations || [];
   return window.PlaylogOfficialData;
 }
 
@@ -143,6 +144,95 @@ function toMatchParticipantRows(match) {
   }));
 }
 
+function fromEvaluationRow(row, scoreRows = [], traitRows = [], highlightRows = []) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    matchId: row.match_id,
+    evaluatorUserId: row.evaluator_user_id,
+    targetUserId: row.target_user_id,
+    selectedPosition: row.selected_position,
+    overallComment: row.overall_comment || "",
+    version: row.version || 1,
+    isActive: row.is_active !== false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    scores: scoreRows.filter((score) => score.evaluation_id === row.id).map(fromEvaluationScoreRow),
+    traits: traitRows.filter((trait) => trait.evaluation_id === row.id).map(fromEvaluationTraitRow),
+    highlights: highlightRows.filter((highlight) => highlight.evaluation_id === row.id).map(fromEvaluationHighlightRow),
+  };
+}
+
+function toEvaluationRow(evaluation, { isActive = evaluation.isActive !== false, version = evaluation.version || 1 } = {}) {
+  const timestamp = evaluation.updatedAt || evaluation.createdAt || new Date().toISOString();
+  return {
+    id: evaluation.id,
+    match_id: evaluation.matchId,
+    evaluator_user_id: evaluation.evaluatorUserId,
+    target_user_id: evaluation.targetUserId,
+    selected_position: evaluation.selectedPosition,
+    overall_comment: evaluation.overallComment || "",
+    version,
+    is_active: isActive,
+    created_at: evaluation.createdAt || timestamp,
+    updated_at: timestamp,
+  };
+}
+
+function fromEvaluationScoreRow(row) {
+  return {
+    id: row.id,
+    evaluationId: row.evaluation_id,
+    category: row.category,
+    key: row.key,
+    score: Number(row.score),
+  };
+}
+
+function toEvaluationScoreRows(evaluation) {
+  return (evaluation.scores || []).map((score) => ({
+    id: score.id,
+    evaluation_id: evaluation.id,
+    category: score.category,
+    key: score.key,
+    score: score.score,
+  }));
+}
+
+function fromEvaluationTraitRow(row) {
+  return {
+    id: row.id,
+    evaluationId: row.evaluation_id,
+    key: row.key,
+    score: Number(row.score),
+  };
+}
+
+function toEvaluationTraitRows(evaluation) {
+  return (evaluation.traits || []).map((trait) => ({
+    id: trait.id,
+    evaluation_id: evaluation.id,
+    key: trait.key,
+    score: trait.score,
+  }));
+}
+
+function fromEvaluationHighlightRow(row) {
+  return {
+    id: row.id,
+    evaluationId: row.evaluation_id,
+    key: row.key,
+  };
+}
+
+function toEvaluationHighlightRows(evaluation) {
+  return (evaluation.highlights || []).map((highlight) => ({
+    id: highlight.id,
+    evaluation_id: evaluation.id,
+    key: highlight.key,
+  }));
+}
+
 function mergeUsers(users = []) {
   const data = officialData();
   users.filter(Boolean).forEach((user) => {
@@ -189,6 +279,32 @@ function mergeMatches(matches = []) {
     const index = data.matches.findIndex((item) => item.id === match.id);
     if (index >= 0) data.matches[index] = { ...data.matches[index], ...match };
     else data.matches.push(match);
+  });
+}
+
+function replaceEvaluationsForMatches(matchIds = [], evaluations = []) {
+  const data = officialData();
+  const matchIdSet = new Set(matchIds);
+  for (let index = data.evaluations.length - 1; index >= 0; index -= 1) {
+    if (matchIdSet.has(data.evaluations[index].matchId)) data.evaluations.splice(index, 1);
+  }
+  evaluations.filter(Boolean).forEach((evaluation) => data.evaluations.push(evaluation));
+}
+
+function mergeEvaluations(evaluations = []) {
+  const data = officialData();
+  evaluations.filter(Boolean).forEach((evaluation) => {
+    const sameSubmission = data.evaluations.filter((item) =>
+      item.matchId === evaluation.matchId
+      && item.evaluatorUserId === evaluation.evaluatorUserId
+      && item.targetUserId === evaluation.targetUserId,
+    );
+    sameSubmission
+      .filter((item) => item.id !== evaluation.id && item.isActive !== false)
+      .forEach((item) => { item.isActive = false; item.updatedAt = evaluation.updatedAt; });
+    const index = data.evaluations.findIndex((item) => item.id === evaluation.id);
+    if (index >= 0) data.evaluations[index] = { ...data.evaluations[index], ...evaluation };
+    else data.evaluations.push(evaluation);
   });
 }
 
@@ -331,11 +447,120 @@ async function createMatch(match) {
   return saved;
 }
 
+async function refreshEvaluations(userId) {
+  assertClient();
+  const { data: participantRows, error: participantsError } = await supabase
+    .from("match_participants")
+    .select("match_id")
+    .eq("user_id", userId);
+  if (participantsError) throw participantsError;
+  const matchIds = [...new Set((participantRows || []).map((participant) => participant.match_id).filter(Boolean))];
+  if (!matchIds.length) {
+    replaceEvaluationsForMatches([], []);
+    return [];
+  }
+
+  const { data: evaluationRows, error: evaluationsError } = await supabase
+    .from("evaluations")
+    .select("*")
+    .in("match_id", matchIds);
+  if (evaluationsError) throw evaluationsError;
+  const evaluationIds = (evaluationRows || []).map((evaluation) => evaluation.id);
+  if (!evaluationIds.length) {
+    replaceEvaluationsForMatches(matchIds, []);
+    return [];
+  }
+
+  const { data: scoreRows, error: scoresError } = await supabase
+    .from("evaluation_scores")
+    .select("*")
+    .in("evaluation_id", evaluationIds);
+  if (scoresError) throw scoresError;
+  const { data: traitRows, error: traitsError } = await supabase
+    .from("evaluation_traits")
+    .select("*")
+    .in("evaluation_id", evaluationIds);
+  if (traitsError) throw traitsError;
+  const { data: highlightRows, error: highlightsError } = await supabase
+    .from("evaluation_highlights")
+    .select("*")
+    .in("evaluation_id", evaluationIds);
+  if (highlightsError) throw highlightsError;
+
+  const evaluations = (evaluationRows || []).map((row) =>
+    fromEvaluationRow(row, scoreRows || [], traitRows || [], highlightRows || []),
+  );
+  replaceEvaluationsForMatches(matchIds, evaluations);
+  return evaluations;
+}
+
+async function saveEvaluation(evaluation) {
+  assertClient();
+  const { data: sameRows, error: sameRowsError } = await supabase
+    .from("evaluations")
+    .select("*")
+    .eq("match_id", evaluation.matchId)
+    .eq("evaluator_user_id", evaluation.evaluatorUserId)
+    .eq("target_user_id", evaluation.targetUserId);
+  if (sameRowsError) throw sameRowsError;
+
+  const version = sameRows?.length
+    ? Math.max(...sameRows.map((row) => row.version || 1)) + 1
+    : 1;
+  const timestamp = evaluation.updatedAt || evaluation.createdAt || new Date().toISOString();
+  const versioned = { ...evaluation, version, isActive: true, updatedAt: timestamp };
+
+  const { data: savedEvaluationRow, error: insertEvaluationError } = await supabase
+    .from("evaluations")
+    .insert(toEvaluationRow(versioned, { isActive: false, version }))
+    .select("*")
+    .single();
+  if (insertEvaluationError) throw insertEvaluationError;
+
+  const scoreRows = toEvaluationScoreRows(versioned);
+  if (scoreRows.length) {
+    const { error } = await supabase.from("evaluation_scores").insert(scoreRows);
+    if (error) throw error;
+  }
+  const traitRows = toEvaluationTraitRows(versioned);
+  if (traitRows.length) {
+    const { error } = await supabase.from("evaluation_traits").insert(traitRows);
+    if (error) throw error;
+  }
+  const highlightRows = toEvaluationHighlightRows(versioned);
+  if (highlightRows.length) {
+    const { error } = await supabase.from("evaluation_highlights").insert(highlightRows);
+    if (error) throw error;
+  }
+
+  const activeIds = (sameRows || []).filter((row) => row.is_active !== false).map((row) => row.id);
+  if (activeIds.length) {
+    const { error } = await supabase
+      .from("evaluations")
+      .update({ is_active: false, updated_at: timestamp })
+      .in("id", activeIds);
+    if (error) throw error;
+  }
+
+  const { data: activatedEvaluationRow, error: activateError } = await supabase
+    .from("evaluations")
+    .update({ is_active: true, updated_at: timestamp })
+    .eq("id", savedEvaluationRow.id)
+    .select("*")
+    .single();
+  if (activateError) throw activateError;
+
+  const saved = fromEvaluationRow(activatedEvaluationRow, scoreRows, traitRows, highlightRows);
+  mergeEvaluations([saved]);
+  return saved;
+}
+
 async function bootstrapUserData(userId) {
   assertClient();
   await refreshUsers();
   await refreshFriends(userId);
   await refreshMatches(userId);
+  await refreshEvaluations(userId);
 }
 
 window.PlaylogSupabase = {
@@ -349,5 +574,7 @@ window.PlaylogSupabase = {
   addFriend,
   refreshMatches,
   createMatch,
+  refreshEvaluations,
+  saveEvaluation,
   bootstrapUserData,
 };
