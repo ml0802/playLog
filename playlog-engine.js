@@ -598,6 +598,55 @@
     return selector(valid.find((card) => counts[selector(card)] === maximum));
   }
 
+  function calculateMonthlyMainPosition(cards) {
+    if (!cards.length) return null;
+    const summary = cards.reduce((positions, card, index) => {
+      const selectedEntries = Object.entries(card.selectedPositionSummary || {})
+        .filter(([position, item]) => POSITIONS.includes(position) && item?.count > 0);
+      const entries = selectedEntries.length
+        ? selectedEntries
+        : [[card.mainEvaluatedPosition, { count: card.mainEvaluatedPosition ? 1 : 0 }]];
+      entries.forEach(([position, item]) => {
+        if (!POSITIONS.includes(position) || !item?.count) return;
+        if (!positions[position]) {
+          positions[position] = {
+            position,
+            count: 0,
+            score: 0,
+            scoreCount: 0,
+            latestIndex: Number.POSITIVE_INFINITY,
+          };
+        }
+        positions[position].count += item.count;
+        const positionScore = card.positionAdaptation?.[position]?.adaptationRating
+          ?? card.positionAdaptation?.[position]?.positionAverage
+          ?? card.overallRating;
+        if (Number.isFinite(positionScore)) {
+          positions[position].score += positionScore;
+          positions[position].scoreCount += 1;
+        }
+        if (card.mainEvaluatedPosition === position || item.count > 0) {
+          positions[position].latestIndex = Math.min(positions[position].latestIndex, index);
+        }
+      });
+      return positions;
+    }, {});
+    return Object.values(summary).sort((left, right) => {
+      const leftScore = left.scoreCount ? left.score / left.scoreCount : 0;
+      const rightScore = right.scoreCount ? right.score / right.scoreCount : 0;
+      return right.count - left.count
+        || rightScore - leftScore
+        || left.latestIndex - right.latestIndex;
+    })[0]?.position || null;
+  }
+
+  function cardsForMonthlyPosition(cards, position) {
+    if (!position) return [];
+    return cards.filter((card) =>
+      card.mainEvaluatedPosition === position
+      || card.selectedPositionSummary?.[position]?.count > 0);
+  }
+
   function calculateMonthlyPositionAdaptation(cards) {
     return POSITIONS.reduce((adaptation, position) => {
       const available = cards.map((card) => card.positionAdaptation?.[position]).filter(Boolean);
@@ -638,6 +687,8 @@
     const monthlyCards = monthlyCardsForUser(userId, monthKey, cards);
     if (!monthlyCards.length) return null;
     const monthlyOVR = Math.round(average(monthlyCards.map((card) => card.overallRating)));
+    const mainPosition = calculateMonthlyMainPosition(monthlyCards);
+    const positionCards = cardsForMonthlyPosition(monthlyCards, mainPosition);
     return {
       userId,
       monthKey,
@@ -645,8 +696,8 @@
       previousMonthlyOVR: previousMonthlyCard?.monthlyOVR ?? null,
       monthlyOVRChange: previousMonthlyCard ? monthlyOVR - previousMonthlyCard.monthlyOVR : null,
       radarData: calculateMonthlyRadarAverage(monthlyCards),
-      mainPlayStyle: monthlyMode(monthlyCards, (card) => card.playStyle, "분석 준비중"),
-      mainPosition: monthlyMode(monthlyCards, (card) => card.mainEvaluatedPosition, null),
+      mainPlayStyle: monthlyMode(positionCards, (card) => card.playStyle, "분석 준비중"),
+      mainPosition,
       positionAdaptation: calculateMonthlyPositionAdaptation(monthlyCards),
       matchCount: monthlyCards.length,
       strengthsSummary: calculateMonthlySummary(monthlyCards, "strengthsTop3"),

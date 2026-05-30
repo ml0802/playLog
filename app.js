@@ -974,8 +974,6 @@ function matchDisplayMeta(match) {
 function renderActiveMatchProgress() {
   const match = activeMatchRecord();
   const progress = window.PlaylogOfficialData?.getEvaluationProgress?.(selectedMatchId);
-  const activeMatches = currentUserMatches().filter((item) => item.status !== "published");
-  const allButton = document.querySelector("#activeMatchAllButton");
   if (!match || !progress) {
     document.querySelector("#activeMatchStatus").textContent = "대기";
     document.querySelector("#activeMatchTitle").textContent = "진행 중인 평가가 없습니다.";
@@ -986,12 +984,8 @@ function renderActiveMatchProgress() {
     document.querySelector("#activeMatchProgressValue").textContent = "-";
     document.querySelector("#activeMatchProgressLabel").textContent = "대기";
     document.querySelector("#activeMatchAction").hidden = true;
-    if (allButton) allButton.dataset.toast = "진행 중인 평가가 없습니다.";
     return;
   }
-  if (allButton) allButton.dataset.toast = activeMatches.length
-    ? `진행 중인 평가 ${activeMatches.length}개가 있어요`
-    : "진행 중인 평가가 없습니다.";
   document.querySelector("#activeMatchAction").hidden = false;
   const waiting = window.PlaylogOfficialData.getPublishWaitingStatus?.(selectedMatchId);
   const pomResult = match.status === "published"
