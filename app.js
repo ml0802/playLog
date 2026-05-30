@@ -2137,8 +2137,8 @@ function openSheet(kind, payload = null) {
     `,
     friend: `
       <h3>Playlog ID로 친구 추가</h3>
-      <p>닉네임은 중복될 수 있어요. 친구 추가는 고유 Playlog ID로 검색합니다.</p>
-      <label class="field-label"><span>Playlog ID</span><input id="friendPlaylogIdSearch" placeholder="예: minsu10" /></label>
+      <p>친구 추가는 Playlog ID로 검색합니다.</p>
+      <label class="field-label"><span>Playlog ID</span><input id="friendPlaylogIdSearch" placeholder="예: rookie10" /></label>
       <button class="primary full" id="searchFriendById" type="button">검색</button>
       <div class="friend-search-result" id="friendSearchResult"></div>
     `,
