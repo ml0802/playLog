@@ -460,7 +460,13 @@
 
   function calculateCurrentPlayStyle(cards) {
     const window = recentWindow(cards).cards;
-    const valid = window.filter((card) => card.playStyle && card.playStyle !== "분석 준비중");
+    const mainPosition = calculateCurrentMainPosition(cards);
+    const positionMatched = mainPosition
+      ? window.filter((card) => card.mainEvaluatedPosition === mainPosition && card.playStyle && card.playStyle !== "분석 준비중")
+      : [];
+    const valid = positionMatched.length
+      ? positionMatched
+      : window.filter((card) => card.playStyle && card.playStyle !== "분석 준비중");
     if (!valid.length) return "분석 준비중";
     const counts = valid.reduce((summary, card) => {
       summary[card.playStyle] = (summary[card.playStyle] || 0) + 1;

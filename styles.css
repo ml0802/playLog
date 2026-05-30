@@ -74,6 +74,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   background: radial-gradient(circle at 22% 18%, rgba(104,54,230,.18), transparent 31%), linear-gradient(145deg, rgba(255,255,255,.09), rgba(255,255,255,.035));
   box-shadow: 0 18px 50px rgba(0,0,0,.2);
   cursor: pointer;
+  border-radius: 20px 20px 12px 12px;
 }
 
 .player-card.expanded, .analysis-card.expanded { transform: scale(1.02); box-shadow: 0 26px 70px rgba(99,54,230,.28); }
@@ -234,11 +235,11 @@ svg text { font-family: inherit; }
 
 .flow-card, .reflection-card { display: block; color: var(--ink); background: #fff; box-shadow: none; }
 .flow-card h2, .flow-card p { margin: 0 0 8px; }
-.eval-target { padding: 12px; margin-bottom: 14px; border-radius: 14px; background: linear-gradient(135deg, #f8f5ff, #fff); border: 1px solid rgba(99,54,230,.18); }
+.eval-target { padding: 9px 12px; margin-bottom: 10px; border-radius: 13px; background: linear-gradient(135deg, #f8f5ff, #fff); border: 1px solid rgba(99,54,230,.18); }
 .eval-target span { color: var(--muted); font-weight: 800; }
 .eval-target strong { color: var(--purple); }
 .eval-target.pulse { animation: glowPulse 1.1s ease; }
-.stepper { display: grid; grid-template-columns: repeat(auto-fit, minmax(22px, 1fr)); gap: 6px; margin: 18px 0; }
+.stepper { display: grid; grid-template-columns: repeat(auto-fit, minmax(22px, 1fr)); gap: 6px; margin: 10px 0 14px; }
 .stepper span { height: 5px; border-radius: 99px; background: #ddd9ec; }
 .stepper .done, .stepper .current { background: var(--purple); }
 .stepper .current { box-shadow: 0 0 0 4px rgba(99,54,230,.1); }
@@ -256,7 +257,7 @@ svg text { font-family: inherit; }
 .score-grid { grid-template-columns: repeat(5, 1fr); margin: 18px 0; }
 .score-button { text-align: center; padding: 10px 0; }
 .chip-grid { grid-template-columns: repeat(2, 1fr); }
-.rating-list { display: grid; grid-template-columns: 1fr; gap: 9px; max-height: 510px; overflow-y: auto; padding-right: 2px; }
+.rating-list { display: grid; grid-template-columns: 1fr; gap: 9px; max-height: none; overflow: visible; padding-right: 0; }
 .rating-card { border: 1px solid var(--line); border-radius: 13px; background: #fff; padding: 10px; }
 .rating-copy strong { display: block; font-size: 14px; }
 .rating-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -446,6 +447,7 @@ svg text { font-family: inherit; }
 .friend-highlight p { margin: 8px 0 0; color: var(--muted); }
 .my-friend-profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; }
 .my-friend-profile small { display: block; margin-top: 7px; color: var(--muted); line-height: 1.35; }
+.my-friend-profile .friend-count-line { margin-top: 3px; color: var(--ink); font-weight: 900; }
 .my-friend-actions { display: grid; gap: 6px; min-width: 92px; }
 .my-friend-profile button { border-radius: 999px; padding: 7px 10px; background: #ede7ff; color: var(--purple); font-size: 11px; font-weight: 900; white-space: nowrap; }
 .friend-list { display: grid; gap: 10px; }
@@ -511,19 +513,20 @@ svg text { font-family: inherit; }
   white-space: nowrap;
 }
 .friend-profile-summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-.friend-profile-summary-grid span, .friend-position-list span { padding: 10px; border-radius: 12px; background: #faf9ff; color: var(--muted); font-size: 11px; font-weight: 800; }
+.friend-profile-summary-grid span, .friend-position-list span { padding: 10px; border-radius: 12px; background: #faf9ff; color: var(--muted); font-size: 11px; font-weight: 800; min-width: 0; }
 .friend-profile-summary-grid strong, .friend-position-list strong { display: block; margin-top: 4px; color: var(--ink); font-size: 13px; }
-.friend-position-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 2px; }
+.friend-position-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 9px; margin-top: 2px; }
+.friend-position-list span, .friend-position-list strong { word-break: keep-all; overflow-wrap: normal; }
 .friend-profile-match-list { display: grid; gap: 8px; }
 .friend-profile-section > .friend-profile-monthly,
 .friend-profile-section > .friend-profile-note { margin-top: 2px; }
-.friend-profile-match, .friend-profile-monthly { width: 100%; display: grid; grid-template-columns: 68px 1fr; gap: 10px; align-items: center; padding: 12px; border: 1px solid #e4ddfb; border-radius: 14px; background: linear-gradient(145deg, #fff, #fbf9ff); color: var(--ink); text-align: left; }
+.friend-profile-match, .friend-profile-monthly { width: 100%; display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: center; padding: 12px; border: 1px solid #e4ddfb; border-radius: 10px; background: linear-gradient(145deg, #fff, #fbf9ff); color: var(--ink); text-align: left; }
 .friend-profile-match span { color: var(--purple); font-size: 12px; font-weight: 950; }
-.friend-profile-match strong, .friend-profile-monthly strong { display: block; font-size: 14px; }
-.friend-profile-match p, .friend-profile-monthly p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.friend-profile-match strong, .friend-profile-monthly strong { display: block; font-size: 14px; line-height: 1.28; word-break: keep-all; overflow-wrap: anywhere; }
+.friend-profile-match p, .friend-profile-monthly p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }
 .friend-profile-match small { grid-column: 1 / -1; display: flex; gap: 5px; flex-wrap: wrap; }
-.friend-profile-match small i { padding: 4px 7px; border-radius: 999px; background: #f0eaff; color: var(--purple); font-size: 10px; font-style: normal; font-weight: 900; }
-.friend-profile-monthly { grid-template-columns: 1fr auto; }
+.friend-profile-match small i { padding: 4px 7px; border-radius: 7px; background: #f0eaff; color: var(--purple); font-size: 10px; font-style: normal; font-weight: 900; word-break: keep-all; }
+.friend-profile-monthly { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
 .friend-profile-monthly span { color: var(--purple); font-size: 10px; font-weight: 950; letter-spacing: .05em; }
 .friend-profile-monthly b { font-size: 18px; }
 .friend-profile-monthly em { display: block; color: #54c94c; font-size: 11px; font-style: normal; text-align: right; }

@@ -60,6 +60,33 @@ const playTypeCatalog = {
     ["올라운드 플레이어", "All-Round Player"],
   ],
 };
+const profilePresetLabels = {
+  "attack-0": "침투형 공격수",
+  "attack-1": "골잡이형 포처",
+  "attack-2": "연계형 공격수",
+  "attack-3": "압박형 포워드",
+  "attack-4": "자유형 공격수",
+  "cam-0": "창의형 플레이메이커",
+  "cam-1": "자유형 플레이메이커",
+  "cam-2": "공격 가담형 미드필더",
+  "cam-3": "조율형 플레이메이커",
+  "cam-4": "로밍 플레이메이커",
+  "cdm-0": "후방 조율형 미드필더",
+  "cdm-1": "압박형 미드필더",
+  "cdm-2": "안정형 앵커",
+  "cdm-3": "활동형 올라운더",
+  "cdm-4": "자유 조율형 플레이메이커",
+  "defense-0": "안정형 수비수",
+  "defense-1": "빌드업형 수비수",
+  "defense-2": "수비 집중형 수비수",
+  "defense-3": "활동형 수비수",
+  "defense-4": "예측형 수비수",
+  "free-0": "전방위 로머",
+  "free-1": "연결형 프리롤",
+  "free-2": "유동형 프리롤",
+  "free-3": "에너지형 프리롤",
+  "free-4": "올라운드 플레이어",
+};
 const avatarSheets = {
   attack: "./assets/preset-attack.png",
   cam: "./assets/preset-cam.png",
@@ -890,7 +917,7 @@ function radarLabel(key) {
 
 function currentPlayStyleCode(stats) {
   return recentOfficialCards(60)
-    .filter((card) => card && card.playStyle === stats.currentPlayStyle)
+    .filter((card) => card && card.playStyle === stats.currentPlayStyle && (!stats.currentMainPosition || card.mainEvaluatedPosition === stats.currentMainPosition))
     .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())[0]
     ?.playStyleCode || "";
 }
@@ -1141,6 +1168,7 @@ function avatarPresetItems() {
       key: `${positionKey}-${index}`,
       positionKey,
       name,
+      label: profilePresetLabels[`${positionKey}-${index}`] || name,
       sub,
       index,
       image: avatarSheets[positionKey],
@@ -1733,6 +1761,10 @@ function currentFormAnalysisTemplate(card) {
         <small>최근 60일 내 최대 최근 4경기 기준</small>
       </div>
       <div class="report-radar">${playerCurrentRadarStats(card).map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
+      ${reportScoreBlock("최근 폼 공통 평가", commonItems)}
+      ${reportScoreBlock("최근 폼 포지션 평가", positionItems)}
+      ${reportScoreBlock("최근 폼 선택 성향", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
+      ${currentPositionIdentityTemplate(card)}
       <div class="result-section up">
         <div class="result-section-head">현재 폼 강점 TOP3 <span>↗</span></div>
         <div class="result-grid">${renderOfficialResultStats(card.strengthsTop3, "up")}</div>
@@ -1741,10 +1773,6 @@ function currentFormAnalysisTemplate(card) {
         <div class="result-section-head">현재 폼 보완점 TOP3 <span>↘</span></div>
         <div class="result-grid">${renderOfficialResultStats(card.weaknessesTop3, "down")}</div>
       </div>
-      ${currentPositionIdentityTemplate(card)}
-      ${reportScoreBlock("최근 폼 공통 평가", commonItems)}
-      ${reportScoreBlock("최근 폼 포지션 평가", positionItems)}
-      ${reportScoreBlock("최근 폼 선택 성향", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
       <div class="style-change">
         <small>현재 폼 요약</small>
         <p>${card.matchAnalysisText}</p>
@@ -2097,7 +2125,7 @@ function openSheet(kind, payload = null) {
       </select></label>
       <label class="field-label"><span>선호 역할</span><select id="profileEditRole">${signupRoleOptionsHtml(me.mainPosition || "free", me.preferredRole || "")}</select></label>
       <label class="field-label"><span>프로필 프리셋</span><select id="profileEditPreset">
-        ${avatarPresetItems().map((preset) => `<option value="${preset.key}" ${me.profilePreset === preset.key ? "selected" : ""}>${preset.name}</option>`).join("")}
+        ${avatarPresetItems().map((preset) => `<option value="${preset.key}" ${me.profilePreset === preset.key ? "selected" : ""}>${preset.label}</option>`).join("")}
       </select></label>
       <div class="profile-edit-actions">
         <button class="secondary full" data-close-sheet type="button">취소</button>
@@ -2146,7 +2174,7 @@ function openSheet(kind, payload = null) {
             <div class="preset-grid">
               ${types.map(([name], index) => {
                 const preset = { key: `${positionKey}-${index}`, positionKey, name, index, image: avatarSheets[positionKey] };
-                return `<button class="preset-card ${selectedAvatar === preset.key ? "selected" : ""}" data-avatar="${preset.key}" type="button"><span class="preset-thumb" style="${presetStyle(preset)}"></span><strong>${name}</strong></button>`;
+                return `<button class="preset-card ${selectedAvatar === preset.key ? "selected" : ""}" data-avatar="${preset.key}" type="button"><span class="preset-thumb" style="${presetStyle(preset)}"></span><strong>${profilePresetLabels[preset.key] || name}</strong></button>`;
               }).join("")}
             </div>
           </section>
@@ -2483,7 +2511,6 @@ function renderEvaluationList() {
   if (!matches.length) {
     pane.innerHTML = `
       <div class="empty-panel evaluation-empty">
-        <i aria-hidden="true">평</i>
         <strong>진행 중인 평가가 없습니다.</strong>
         <p>새 경기에 참여하면 평가를 받을 수 있습니다.</p>
       </div>
@@ -2559,7 +2586,7 @@ function renderEvaluation() {
   document.querySelector("#stepTitle").textContent = isAwardStep ? "경기 투표" : currentStep >= 6 ? "평가 저장 완료" : flowSteps[currentStep];
   document.querySelector("#stepHelp").textContent = isAwardStep
     ? "두 선택은 OVR에 영향 없이 결과 공개 때 함께 보여집니다."
-    : currentStep === 2 ? "6점은 평균입니다. 눈에 띈 장면만 빠르게 올려주세요." : "공식 선수카드는 동료 평가만 반영합니다.";
+    : currentStep === 2 ? "평균은 6점입니다." : "공식 선수카드는 동료 평가만 반영합니다.";
   renderStepper();
 
   const pane = document.querySelector("#evaluationPane");
@@ -3157,7 +3184,7 @@ function renderAuth() {
       <label>주 포지션<select id="signupPosition">${positions.map(([key, label]) => `<option value="${key}" ${user?.mainPosition === key ? "selected" : ""}>${label}</option>`).join("")}</select></label>
       <label>선호 역할<select id="signupRole">${signupRoleOptionsHtml(user?.mainPosition || "attack", user?.preferredRole || "")}</select></label>
       <label>한 줄 소개<textarea id="signupBio" rows="3" placeholder="내 플레이 스타일을 짧게 적어주세요.">${escapeHtml(user?.bio || "")}</textarea></label>
-      <label>프로필 프리셋<select id="signupPreset">${avatarPresetItems().map((preset) => `<option value="${preset.key}" ${user?.profilePreset === preset.key ? "selected" : ""}>${preset.name}</option>`).join("")}</select></label>
+      <label>프로필 프리셋<select id="signupPreset">${avatarPresetItems().map((preset) => `<option value="${preset.key}" ${user?.profilePreset === preset.key ? "selected" : ""}>${preset.label}</option>`).join("")}</select></label>
       <button class="primary full" id="submitSignup" type="button">가입 신청하기</button>
     </div>
   `;
@@ -3380,7 +3407,7 @@ function renderFriends() {
   const highlight = document.querySelector(".friend-highlight");
   highlight.innerHTML = `
     <article class="my-friend-profile">
-      <div><span>내 Playlog ID</span><strong>${displayUserName(currentUserId)}</strong><p>@${me?.playlogId || "-"}</p><small>${myPosition} · ${me?.preferredRole || "선호 역할 준비중"} · ${myStats?.currentOVR ? `OVR ${myStats.currentOVR}` : "분석 준비중"} · 친구 ${list.length}명</small></div>
+      <div><span>내 Playlog ID</span><strong>${displayUserName(currentUserId)}</strong><p>@${me?.playlogId || "-"}</p><small>${myPosition} · ${me?.preferredRole || "선호 역할 준비중"} · ${myStats?.currentOVR ? `OVR ${myStats.currentOVR}` : "분석 준비중"}</small><small class="friend-count-line">친구 ${list.length}명</small></div>
       <div class="my-friend-actions">
         <button type="button" id="myProfileOpen">내 프로필 보기</button>
         <button type="button" id="logoutButton">로그아웃</button>
