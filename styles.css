@@ -445,8 +445,17 @@ svg text { font-family: inherit; }
 .friend-highlight strong { display: block; margin-top: 6px; }
 .friend-highlight p { margin: 8px 0 0; color: var(--muted); }
 .my-friend-profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
-.my-friend-profile small { display: block; margin-top: 7px; color: var(--muted); line-height: 1.35; }
-.my-friend-profile .friend-count-line { margin-top: 3px; color: var(--muted); font-size: inherit; font-weight: inherit; opacity: inherit; }
+.my-friend-profile small,
+.my-friend-profile .friend-count-line {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  opacity: 1;
+}
+.my-friend-profile small { margin-top: 7px; }
+.my-friend-profile .friend-count-line { margin-top: 3px; }
 .my-friend-actions { display: grid; align-content: center; gap: 6px; min-width: 92px; }
 .my-friend-profile button { border-radius: 999px; padding: 7px 10px; background: #ede7ff; color: var(--purple); font-size: 11px; font-weight: 900; white-space: nowrap; }
 .friend-list { display: grid; gap: 10px; }
@@ -519,16 +528,21 @@ svg text { font-family: inherit; }
 .friend-profile-match-list { display: grid; gap: 8px; }
 .friend-profile-section > .friend-profile-monthly,
 .friend-profile-section > .friend-profile-note { margin-top: 2px; }
-.friend-profile-match, .friend-profile-monthly { width: 100%; display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: center; padding: 12px; border: 1px solid #e4ddfb; border-radius: 14px; background: linear-gradient(145deg, #fff, #fbf9ff); color: var(--ink); text-align: left; }
+.friend-profile-match, .friend-profile-monthly { width: 100%; display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: center; padding: 12px; border: 1px solid #e4ddfb; border-radius: 9px !important; background: linear-gradient(145deg, #fff, #fbf9ff); color: var(--ink); text-align: left; appearance: none; overflow: hidden; background-clip: padding-box; }
 .friend-profile-match span { color: var(--purple); font-size: 12px; font-weight: 950; }
 .friend-profile-match strong, .friend-profile-monthly strong { display: block; font-size: 14px; line-height: 1.28; word-break: keep-all; overflow-wrap: anywhere; }
 .friend-profile-match p, .friend-profile-monthly p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }
 .friend-profile-match small { grid-column: 1 / -1; display: flex; gap: 5px; flex-wrap: wrap; }
 .friend-profile-match small i { padding: 4px 7px; border-radius: 5px; background: #f0eaff; color: var(--purple); font-size: 10px; font-style: normal; font-weight: 900; word-break: keep-all; }
-.friend-profile-monthly { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.friend-profile-monthly { grid-template-columns: minmax(0, 1fr) auto; align-items: start; border-radius: 9px !important; }
 .friend-profile-monthly span { color: var(--purple); font-size: 10px; font-weight: 950; letter-spacing: .05em; }
 .friend-profile-monthly b { font-size: 18px; }
 .friend-profile-monthly em { display: block; color: #54c94c; font-size: 11px; font-style: normal; text-align: right; }
+.friend-profile-section .friend-profile-match,
+.friend-profile-section .friend-profile-monthly {
+  border-radius: 9px !important;
+  clip-path: inset(0 round 9px);
+}
 .my-profile-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
 .my-profile-actions .primary.full, .my-profile-actions .secondary.full {
   width: 100%;
