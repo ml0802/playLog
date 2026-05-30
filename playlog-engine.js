@@ -462,7 +462,10 @@
     const window = recentWindow(cards).cards;
     const mainPosition = calculateCurrentMainPosition(cards);
     const positionMatched = mainPosition
-      ? window.filter((card) => card.mainEvaluatedPosition === mainPosition && card.playStyle && card.playStyle !== "분석 준비중")
+      ? window.filter((card) =>
+        (card.mainEvaluatedPosition === mainPosition || card.selectedPositionSummary?.[mainPosition]?.count > 0)
+        && card.playStyle
+        && card.playStyle !== "분석 준비중")
       : [];
     const valid = positionMatched.length
       ? positionMatched
@@ -477,14 +480,46 @@
   }
 
   function calculateCurrentMainPosition(cards) {
-    const window = recentWindow(cards).cards.filter((card) => card.mainEvaluatedPosition);
+    const window = recentWindow(cards).cards;
     if (!window.length) return null;
-    const counts = window.reduce((summary, card) => {
-      summary[card.mainEvaluatedPosition] = (summary[card.mainEvaluatedPosition] || 0) + 1;
-      return summary;
+    const summary = window.reduce((positions, card, index) => {
+      const selectedEntries = Object.entries(card.selectedPositionSummary || {})
+        .filter(([position, item]) => POSITIONS.includes(position) && item?.count > 0);
+      const entries = selectedEntries.length
+        ? selectedEntries
+        : [[card.mainEvaluatedPosition, { count: card.mainEvaluatedPosition ? 1 : 0 }]];
+      entries.forEach(([position, item]) => {
+        if (!POSITIONS.includes(position) || !item?.count) return;
+        if (!positions[position]) {
+          positions[position] = {
+            position,
+            count: 0,
+            score: 0,
+            scoreCount: 0,
+            latestIndex: Number.POSITIVE_INFINITY,
+          };
+        }
+        positions[position].count += item.count;
+        const positionScore = card.positionAdaptation?.[position]?.adaptationRating
+          ?? card.positionAdaptation?.[position]?.positionAverage
+          ?? card.overallRating;
+        if (Number.isFinite(positionScore)) {
+          positions[position].score += positionScore;
+          positions[position].scoreCount += 1;
+        }
+        if (card.mainEvaluatedPosition === position || item.count > 0) {
+          positions[position].latestIndex = Math.min(positions[position].latestIndex, index);
+        }
+      });
+      return positions;
     }, {});
-    const maximum = Math.max(...Object.values(counts));
-    return window.find((card) => counts[card.mainEvaluatedPosition] === maximum).mainEvaluatedPosition;
+    return Object.values(summary).sort((left, right) => {
+      const leftScore = left.scoreCount ? left.score / left.scoreCount : 0;
+      const rightScore = right.scoreCount ? right.score / right.scoreCount : 0;
+      return right.count - left.count
+        || rightScore - leftScore
+        || left.latestIndex - right.latestIndex;
+    })[0]?.position || null;
   }
 
   function calculateCurrentPositionAdaptation(cards) {

@@ -259,6 +259,46 @@ assert.ok(analysisHtml.includes("최근 2경기 단순 평균 · 최근 60일 �
 assert.ok(analysisHtml.includes("최근 60일 내 최대 최근 4경기 기준"));
 assert.ok(!analysisHtml.includes("이전 경기 분석입니다."));
 
+const positionIdentityMismatch = renderAppWithData({ ...liveStats, currentMainPosition: "dm", currentPlayStyle: "연결형 프리롤" }, [
+  {
+    userId: "user:seunghyun",
+    matchId: "match:identity-latest",
+    generatedAt: "2026-05-28T00:00:00.000Z",
+    overallRating: 82,
+    playStyle: "연결형 프리롤",
+    playStyleCode: "Link Playmaker",
+    mainEvaluatedPosition: "dm",
+    selectedPositionSummary: { free: { count: 1 }, am: { count: 1 } },
+    positionAdaptation: { free: { adaptationRating: 84 }, am: { adaptationRating: 79 }, dm: null },
+    radarData: { activity: 77, gameSense: 82, pass: 83, ballControl: 70, movement: 76, mentality: 80 },
+    strengthsTop3: [],
+    weaknessesTop3: [],
+    analysisScores: [],
+  },
+  {
+    userId: "user:seunghyun",
+    matchId: "match:identity-older",
+    generatedAt: "2026-05-21T00:00:00.000Z",
+    overallRating: 80,
+    playStyle: "연결형 프리롤",
+    playStyleCode: "Link Playmaker",
+    mainEvaluatedPosition: "dm",
+    selectedPositionSummary: { free: { count: 1 } },
+    positionAdaptation: { free: { adaptationRating: 83 }, dm: null },
+    radarData: { activity: 75, gameSense: 80, pass: 82, ballControl: 68, movement: 74, mentality: 78 },
+    strengthsTop3: [],
+    weaknessesTop3: [],
+    analysisScores: [],
+  },
+]);
+assert.equal(positionIdentityMismatch.get("#homePosition").textContent, "프리롤 · FR");
+positionIdentityMismatch.get("#officialCard").listeners.click();
+const identityHtml = positionIdentityMismatch.get("#sheet").innerHTML;
+assert.ok(identityHtml.includes("프리롤<strong>2회</strong>"));
+assert.ok(identityHtml.includes("공미<strong>1회</strong>"));
+assert.ok(identityHtml.includes("대표 포지션: 프리롤"));
+assert.ok(!identityHtml.includes("대표 포지션: 수미"));
+
 const subtleChangeAnalysis = renderAppWithData(liveStats, [{
   userId: "user:seunghyun",
   matchId: "match:subtle-changes",

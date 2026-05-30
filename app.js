@@ -962,6 +962,32 @@ function currentFormPositionSummary(cards) {
   }, {});
 }
 
+function currentFormRepresentativePosition(cards, fallbackPosition = null) {
+  const summary = currentFormPositionSummary(cards);
+  const candidates = Object.entries(summary)
+    .map(([position, item]) => {
+      const relatedCards = cards.filter((card) =>
+        card.selectedPositionSummary?.[position]?.count > 0 || card.mainEvaluatedPosition === position);
+      const scoreValues = relatedCards
+        .map((card) => card.positionAdaptation?.[position]?.adaptationRating ?? card.positionAdaptation?.[position]?.positionAverage ?? card.overallRating)
+        .filter((value) => Number.isFinite(value));
+      const latestIndex = cards.findIndex((card) =>
+        card.selectedPositionSummary?.[position]?.count > 0 || card.mainEvaluatedPosition === position);
+      return {
+        position,
+        count: item?.count || 0,
+        score: scoreValues.length ? average(scoreValues) : 0,
+        latestIndex: latestIndex >= 0 ? latestIndex : Number.POSITIVE_INFINITY,
+      };
+    })
+    .filter((item) => item.count > 0)
+    .sort((left, right) =>
+      right.count - left.count
+      || right.score - left.score
+      || left.latestIndex - right.latestIndex);
+  return candidates[0]?.position || fallbackPosition || null;
+}
+
 function currentFormWeightedEntries(cards) {
   const formCards = cards.slice(0, 4);
   const weights = formCards.length >= 4
@@ -1062,6 +1088,8 @@ function currentFormAnalysisCard() {
   const cards = currentFormWindowCards();
   if (!stats || stats.sourceType === "monthlyFallback" || !cards.length) return null;
   const latest = cards[0];
+  const selectedPositionSummary = currentFormPositionSummary(cards);
+  const mainEvaluatedPosition = currentFormRepresentativePosition(cards, stats.currentMainPosition);
   return {
     ...latest,
     id: `current-form:${currentUserId}`,
@@ -1072,9 +1100,9 @@ function currentFormAnalysisCard() {
     overallChange: stats.ovrChange,
     playStyle: stats.currentPlayStyle,
     playStyleCode: currentPlayStyleCode(stats),
-    mainEvaluatedPosition: stats.currentMainPosition,
+    mainEvaluatedPosition,
     radarData: stats.radarData,
-    selectedPositionSummary: currentFormPositionSummary(cards),
+    selectedPositionSummary,
     positionAdaptation: stats.positionAdaptation,
     strengthsTop3: currentFormRadarHighlights(stats.radarData, "high"),
     weaknessesTop3: currentFormRadarHighlights(stats.radarData, "low"),

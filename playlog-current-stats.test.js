@@ -24,6 +24,13 @@ function card(id, overallRating, generatedAt, playStyle, mainEvaluatedPosition, 
   };
 }
 
+function positionSummaryCard(id, overallRating, generatedAt, playStyle, mainEvaluatedPosition, selectedPositionSummary, positionAdaptation = {}) {
+  return {
+    ...card(id, overallRating, generatedAt, playStyle, mainEvaluatedPosition, 3, 80, positionAdaptation),
+    selectedPositionSummary,
+  };
+}
+
 const twoMatches = [
   card("older", 76, "2026-05-01T00:00:00.000Z", "연결형 프리롤", "free", 2, 70),
   card("latest", 80, "2026-05-02T00:00:00.000Z", "연결형 프리롤", "free", 2, 80),
@@ -71,5 +78,25 @@ assert.equal(weightedStats.positionAdaptation.free.adaptationRating, 86);
 assert.equal(weightedStats.positionAdaptation.defense, null);
 assert.equal(weightedStats.reliabilityLevel, "normal");
 assert.equal(weightedStats.recentMatchCount, 5);
+
+const summaryBasedStats = engine.generatePlayerCurrentStats({
+  userId,
+  cards: [
+    positionSummaryCard("latest-summary", 82, "2026-05-20T00:00:00.000Z", "연결형 프리롤", "dm", {
+      free: { count: 1 },
+      am: { count: 1 },
+    }, {
+      free: { positionAverage: 8, adaptationRating: 84 },
+      am: { positionAverage: 7, adaptationRating: 79 },
+    }),
+    positionSummaryCard("older-summary", 80, "2026-05-10T00:00:00.000Z", "연결형 프리롤", "dm", {
+      free: { count: 1 },
+    }, {
+      free: { positionAverage: 8, adaptationRating: 84 },
+    }),
+  ],
+});
+assert.equal(summaryBasedStats.currentMainPosition, "free");
+assert.equal(summaryBasedStats.currentPlayStyle, "연결형 프리롤");
 
 console.log("playlog-current-stats tests passed");
