@@ -346,8 +346,16 @@ async function updateMatchParticipantCompletionAsync(matchId, userId, evaluation
   return requireSupabaseBridge().updateMatchParticipantCompletion(matchId, userId, evaluationCompleted);
 }
 
+async function recalculateMatchEvaluationCompletionAsync(matchId) {
+  return requireSupabaseBridge().recalculateMatchEvaluationCompletion(matchId);
+}
+
 async function publishMatchAsync(matchId, publishedAt) {
   return requireSupabaseBridge().publishMatch(matchId, publishedAt);
+}
+
+async function refreshMatchesAsync(userId = currentUserId) {
+  return requireSupabaseBridge().refreshMatches(userId);
 }
 
 function withUpsertedCard(cards, card) {
@@ -389,6 +397,10 @@ function buildGeneratedCardBundle({ matchId, userId, generatedAt }) {
 }
 
 async function saveGeneratedCardsForParticipant(matchId, userId, generatedAt) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
+  if (match?.status !== "published") {
+    throw new Error("공개되지 않은 경기의 선수카드는 저장할 수 없습니다.");
+  }
   const bundle = buildGeneratedCardBundle({ matchId, userId, generatedAt });
   if (!bundle) return null;
   return upsertGeneratedCardsAsync(bundle);
@@ -398,26 +410,20 @@ async function syncMatchCompletionAndPublish(evaluation) {
   const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId);
   if (!match) return { published: false, generatedCards: [] };
 
-  const evaluatorCompleted = window.PlaylogOfficialData?.markParticipantEvaluationCompleted?.(
-    evaluation.matchId,
-    evaluation.evaluatorUserId,
-  ) === true;
-  await updateMatchParticipantCompletionAsync(evaluation.matchId, evaluation.evaluatorUserId, evaluatorCompleted);
-
-  const allComplete = window.PlaylogOfficialData?.areAllParticipantsEvaluationsComplete?.(evaluation.matchId) === true;
+  const completion = await recalculateMatchEvaluationCompletionAsync(evaluation.matchId);
   const timestamp = evaluation.updatedAt || evaluation.createdAt || new Date().toISOString();
-  const deadlineReached = match.evaluationDeadlineAt
-    && new Date(timestamp).getTime() >= new Date(match.evaluationDeadlineAt).getTime();
-  if (!allComplete && !deadlineReached) return { published: false, generatedCards: [] };
-
-  await Promise.all((match.participants || []).map((participant) =>
-    updateMatchParticipantCompletionAsync(evaluation.matchId, participant.userId, participant.evaluationCompleted === true),
-  ));
+  if (!completion.allComplete) return { published: false, generatedCards: [] };
 
   const publishedAt = timestamp;
-  const publishedMatch = await publishMatchAsync(evaluation.matchId, publishedAt);
+  await publishMatchAsync(evaluation.matchId, publishedAt);
+  const refreshedMatches = await refreshMatchesAsync(currentUserId);
+  const publishedMatch = (refreshedMatches || []).find((item) => item.id === evaluation.matchId)
+    || (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId);
+  if (publishedMatch?.status !== "published") {
+    throw new Error("경기 공개 상태 동기화에 실패했습니다.");
+  }
   const generatedCards = [];
-  for (const participant of publishedMatch.participants || match.participants || []) {
+  for (const participant of publishedMatch.participants || completion.participants || []) {
     if (participant.evaluationCompleted !== true) continue;
     const savedCards = await saveGeneratedCardsForParticipant(evaluation.matchId, participant.userId, publishedAt);
     if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
@@ -1001,7 +1007,7 @@ function currentStatsForUser(userId = currentUserId) {
     }
   }
   const monthlyCard = latestMonthlyCardForUser(userId);
-  if (!monthlyCard) return existingStats;
+  if (!monthlyCard) return null;
   return {
     userId,
     currentOVR: monthlyCard.monthlyOVR,
@@ -1024,11 +1030,20 @@ function currentHomeStats() {
   return currentStatsForUser(currentUserId);
 }
 
+function isPublishedMatchId(matchId) {
+  return (window.PlaylogOfficialData?.matches || [])
+    .some((match) => match.id === matchId && match.status === "published");
+}
+
+function isPublishedMatchCard(card) {
+  return Boolean(card?.matchId) && isPublishedMatchId(card.matchId);
+}
+
 function recentOfficialCardsForUser(userId = currentUserId, days = 60) {
   const now = new Date("2026-05-28T00:00:00.000Z").getTime();
   const windowMs = days * 24 * 60 * 60 * 1000;
   return (window.PlaylogOfficialData?.playerMatchCards || [])
-    .filter((card) => card && card.userId === userId && card.generatedAt)
+    .filter((card) => card && card.userId === userId && card.generatedAt && isPublishedMatchCard(card))
     .filter((card) => now - new Date(card.generatedAt).getTime() <= windowMs)
     .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime());
 }
@@ -1059,6 +1074,7 @@ function currentFormBasisLabel(stats) {
 function latestMonthlyCardForUser(userId = currentUserId) {
   return (window.PlaylogOfficialData?.playerMonthlyCards || [])
     .filter((card) => card && card.userId === userId)
+    .filter((card) => monthlyMatchCards(card).length > 0)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
 }
 
@@ -1098,20 +1114,21 @@ function currentPlayStyleCode(stats) {
 
 function recentHomeMatchCards() {
   return (window.PlaylogOfficialData?.playerMatchCards || [])
-    .filter((card) => card && card.userId === currentUserId)
+    .filter((card) => card && card.userId === currentUserId && isPublishedMatchCard(card))
     .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime())
     .slice(0, 3);
 }
 
 function userMatchCards(userId = currentUserId) {
   return (window.PlaylogOfficialData?.playerMatchCards || [])
-    .filter((card) => card && card.userId === userId)
+    .filter((card) => card && card.userId === userId && isPublishedMatchCard(card))
     .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime());
 }
 
 function userMonthlyCards(userId = currentUserId) {
   return (window.PlaylogOfficialData?.playerMonthlyCards || [])
     .filter((card) => card && card.userId === userId)
+    .filter((card) => monthlyMatchCards(card).length > 0)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey));
 }
 
@@ -1649,6 +1666,7 @@ function receivedComments(matchId, userId) {
 }
 
 function activeEvaluationsForCard(card) {
+  if (!isPublishedMatchCard(card)) return [];
   return (window.PlaylogOfficialData?.evaluations || [])
     .filter((evaluation) => evaluation.matchId === card.matchId && evaluation.targetUserId === card.userId && evaluation.isActive !== false);
 }
@@ -2069,7 +2087,7 @@ function matchResultDetailTemplate() {
   const match = activeMatchRecord();
   const participantIds = match?.participants?.map((participant) => participant.userId) || [];
   const participantCards = (window.PlaylogOfficialData?.playerMatchCards || [])
-    .filter((card) => card && card.matchId === selectedMatchId)
+    .filter((card) => card && card.matchId === selectedMatchId && isPublishedMatchCard(card))
     .sort((left, right) => {
       const leftIndex = participantIds.indexOf(left.userId);
       const rightIndex = participantIds.indexOf(right.userId);
@@ -2096,7 +2114,7 @@ function awardSummaryCard(title, result, type) {
   const votes = window.PlaylogOfficialData?.matchAwardVotes || [];
   const winnerIds = result?.winnerUserIds || [];
   const winnerCards = winnerIds.map((winnerId) => (window.PlaylogOfficialData?.playerMatchCards || [])
-    .find((card) => card.matchId === selectedMatchId && card.userId === winnerId)).filter(Boolean);
+    .find((card) => card.matchId === selectedMatchId && card.userId === winnerId && isPublishedMatchCard(card))).filter(Boolean);
   const identity = winnerCards[0] ? representativeMatchIdentity(winnerCards[0]) : null;
   const winnerNames = winnerIds.length
     ? winnerIds.map((winnerId) => userNames[winnerId] || winnerId).join(" · ")
@@ -2132,7 +2150,7 @@ function matchResultParticipantCards() {
   const match = activeMatchRecord();
   const participantIds = match?.participants?.map((participant) => participant.userId) || [];
   return (window.PlaylogOfficialData?.playerMatchCards || [])
-    .filter((card) => card && card.matchId === selectedMatchId)
+    .filter((card) => card && card.matchId === selectedMatchId && isPublishedMatchCard(card))
     .sort((left, right) => {
       const leftIndex = participantIds.indexOf(left.userId);
       const rightIndex = participantIds.indexOf(right.userId);
@@ -2445,7 +2463,7 @@ function openSheet(kind, payload = null) {
       if (button.dataset.openDetail === "card") {
         const [matchId, userId] = button.dataset.detailKey.split("::");
         const card = (window.PlaylogOfficialData?.playerMatchCards || [])
-          .find((item) => item.matchId === matchId && item.userId === userId);
+          .find((item) => item.matchId === matchId && item.userId === userId && isPublishedMatchCard(item));
         if (card) openSheet("card", card);
       }
       if (button.dataset.openDetail === "monthlyReport") {
@@ -2460,7 +2478,7 @@ function openSheet(kind, payload = null) {
   sheet.querySelectorAll("[data-match-result-card]").forEach((button) => {
     button.addEventListener("click", () => {
       const card = (window.PlaylogOfficialData?.playerMatchCards || [])
-        .find((item) => item.matchId === button.dataset.matchResultCard && item.userId === button.dataset.cardUser);
+        .find((item) => item.matchId === button.dataset.matchResultCard && item.userId === button.dataset.cardUser && isPublishedMatchCard(item));
       if (card) openSheet("matchResultCardView", card);
     });
   });
@@ -3736,7 +3754,7 @@ function bindInteractions() {
     const friendProfileMatchButton = event.target.closest("[data-friend-profile-match]");
     if (friendProfileMatchButton) {
       const card = (window.PlaylogOfficialData?.playerMatchCards || [])
-        .find((item) => item.matchId === friendProfileMatchButton.dataset.friendProfileMatch && item.userId === friendProfileMatchButton.dataset.cardUser);
+        .find((item) => item.matchId === friendProfileMatchButton.dataset.friendProfileMatch && item.userId === friendProfileMatchButton.dataset.cardUser && isPublishedMatchCard(item));
       if (card) openSheet("cardView", card);
       return;
     }
@@ -3750,7 +3768,7 @@ function bindInteractions() {
     const matchCardButton = event.target.closest("[data-match-card]");
     if (matchCardButton) {
       const card = (window.PlaylogOfficialData?.playerMatchCards || [])
-        .find((item) => item.matchId === matchCardButton.dataset.matchCard && item.userId === matchCardButton.dataset.cardUser);
+        .find((item) => item.matchId === matchCardButton.dataset.matchCard && item.userId === matchCardButton.dataset.cardUser && isPublishedMatchCard(item));
       if (card) openSheet("cardView", card);
       return;
     }

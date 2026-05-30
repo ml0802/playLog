@@ -646,6 +646,69 @@ async function updateMatchParticipantCompletion(matchId, userId, evaluationCompl
   return fromMatchParticipantRow(data);
 }
 
+async function recalculateMatchEvaluationCompletion(matchId) {
+  assertClient();
+  const { data: participantRows, error: participantsError } = await supabase
+    .from("match_participants")
+    .select("*")
+    .eq("match_id", matchId);
+  if (participantsError) throw participantsError;
+
+  const participantUserIds = (participantRows || []).map((participant) => participant.user_id).filter(Boolean);
+  const expectedActiveEvaluationCount = participantUserIds.length * Math.max(participantUserIds.length - 1, 0);
+
+  const { data: activeEvaluationRows, error: evaluationsError } = await supabase
+    .from("evaluations")
+    .select("evaluator_user_id,target_user_id")
+    .eq("match_id", matchId)
+    .eq("is_active", true);
+  if (evaluationsError) throw evaluationsError;
+
+  const activePairs = new Set((activeEvaluationRows || [])
+    .filter((evaluation) =>
+      participantUserIds.includes(evaluation.evaluator_user_id)
+      && participantUserIds.includes(evaluation.target_user_id)
+      && evaluation.evaluator_user_id !== evaluation.target_user_id,
+    )
+    .map((evaluation) => `${evaluation.evaluator_user_id}:${evaluation.target_user_id}`));
+
+  const completionByUserId = new Map(participantUserIds.map((userId) => {
+    const expectedTargets = participantUserIds.filter((targetUserId) => targetUserId !== userId);
+    const evaluationCompleted = expectedTargets.every((targetUserId) => activePairs.has(`${userId}:${targetUserId}`));
+    return [userId, evaluationCompleted];
+  }));
+
+  await Promise.all(participantUserIds.map((userId) =>
+    supabase
+      .from("match_participants")
+      .update({ evaluation_completed: completionByUserId.get(userId) === true })
+      .eq("match_id", matchId)
+      .eq("user_id", userId)
+      .then(({ error }) => {
+        if (error) throw error;
+      }),
+  ));
+
+  const appMatch = officialData().matches.find((match) => match.id === matchId);
+  if (appMatch) {
+    appMatch.participants = (appMatch.participants || []).map((participant) => ({
+      ...participant,
+      evaluationCompleted: completionByUserId.get(participant.userId) === true,
+    }));
+  }
+
+  const participants = (participantRows || []).map((row) => ({
+    ...fromMatchParticipantRow(row),
+    evaluationCompleted: completionByUserId.get(row.user_id) === true,
+  }));
+  return {
+    participants,
+    activeEvaluationCount: activePairs.size,
+    expectedActiveEvaluationCount,
+    allComplete: participantUserIds.length > 1 && participantUserIds.every((userId) => completionByUserId.get(userId) === true),
+  };
+}
+
 async function publishMatch(matchId, publishedAt = new Date().toISOString()) {
   assertClient();
   const { data, error } = await supabase
@@ -885,6 +948,7 @@ window.PlaylogSupabase = {
   refreshMatches,
   createMatch,
   updateMatchParticipantCompletion,
+  recalculateMatchEvaluationCompletion,
   publishMatch,
   refreshEvaluations,
   saveEvaluation,
