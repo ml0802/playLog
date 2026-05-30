@@ -325,6 +325,15 @@ function disableLocalFriendFallback() {
   window.PlaylogOfficialData.addFriend = async (payload) => addFriendAsync(payload);
 }
 
+async function createMatchAsync(payload) {
+  return requireSupabaseBridge().createMatch(payload);
+}
+
+function disableLocalMatchFallback() {
+  if (!window.PlaylogOfficialData) return;
+  window.PlaylogOfficialData.createMatch = async (payload) => createMatchAsync(payload);
+}
+
 async function updateUserStatusAsync(userId, status, approvedAt = null) {
   return requireSupabaseBridge().updateUserStatus(userId, status, approvedAt);
 }
@@ -3460,7 +3469,7 @@ function renderNewMatch() {
     evaluationMode = "list";
     setView("evaluate");
   });
-  pane.querySelector("[data-create-new-match]")?.addEventListener("click", () => {
+  pane.querySelector("[data-create-new-match]")?.addEventListener("click", async () => {
     const title = newMatchDraft.title.trim();
     const location = newMatchDraft.location.trim();
     const date = fromDatetimeLocalValue(newMatchDraft.date);
@@ -3481,20 +3490,26 @@ function renderNewMatch() {
       return;
     }
     const id = `match:custom:${Date.now()}`;
-    const match = window.PlaylogOfficialData.createMatch({
-      id,
-      title,
-      date,
-      location,
-      participants: newMatchDraft.participantIds.map((userId) => ({
-        userId,
-        joinedAt: date,
-        evaluationCompleted: false,
-      })),
-      evaluationDeadlineHours: newMatchDraft.deadlineHours,
-      awardVotingEnabled: newMatchDraft.awardVotingEnabled,
-      status: "evaluating",
-    });
+    let match = null;
+    try {
+      match = await createMatchAsync({
+        id,
+        title,
+        date,
+        location,
+        participants: newMatchDraft.participantIds.map((userId) => ({
+          userId,
+          joinedAt: date,
+          evaluationCompleted: false,
+        })),
+        evaluationDeadlineHours: newMatchDraft.deadlineHours,
+        awardVotingEnabled: newMatchDraft.awardVotingEnabled,
+        status: "evaluating",
+      });
+    } catch (error) {
+      reportSupabaseError(error, "Supabase 경기 생성 실패");
+      return;
+    }
     selectedMatchId = match.id;
     newMatchDraft = null;
     evaluationMode = "list";
@@ -3725,6 +3740,7 @@ window.PlaylogApp = {
 };
 
 disableLocalFriendFallback();
+disableLocalMatchFallback();
 bindInteractions();
 if (isCurrentUserApproved()) {
   renderHome();
