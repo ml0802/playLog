@@ -362,6 +362,10 @@ async function refreshPlayerCardsAsync(userId = currentUserId) {
   return requireSupabaseBridge().refreshPlayerCards(userId);
 }
 
+async function saveMatchAwardVoteAsync(payload) {
+  return requireSupabaseBridge().saveMatchAwardVote(payload);
+}
+
 function withUpsertedCard(cards, card) {
   const nextCards = (cards || []).filter((item) => item && item.id !== card.id);
   nextCards.push(card);
@@ -477,6 +481,12 @@ async function syncMatchCompletionAndPublish(evaluation) {
 function disableLocalEvaluationFallback() {
   if (!window.PlaylogOfficialData) return;
   window.PlaylogOfficialData.saveEvaluation = async (payload) => saveEvaluationAsync(payload);
+}
+
+function disableLocalAwardVoteFallback() {
+  if (!window.PlaylogOfficialData) return;
+  window.PlaylogOfficialData.saveMatchAwardVote = async (payload) => saveMatchAwardVoteAsync(payload);
+  window.PlaylogOfficialData.savePOMVote = async (payload) => saveMatchAwardVoteAsync({ ...payload, type: "pom" });
 }
 
 async function updateUserStatusAsync(userId, status, approvedAt = null) {
@@ -2924,30 +2934,35 @@ function renderEvaluation() {
     }));
     pane.querySelector("#pomReason")?.addEventListener("input", (event) => { pomReason = event.target.value; });
     pane.querySelector("#nextStarReason")?.addEventListener("input", (event) => { nextStarReason = event.target.value; });
-    pane.querySelector("[data-submit-awards]")?.addEventListener("click", () => {
+    pane.querySelector("[data-submit-awards]")?.addEventListener("click", async () => {
       const finalPomSelection = selectedPOMTargetId || pomSelection;
       const finalNextStarSelection = selectedNextStarTargetId || nextStarSelection;
       const cleanedPomReason = sanitizeOptionalText(pomReason, [pomReasonPlaceholder]);
       const cleanedNextStarReason = sanitizeOptionalText(nextStarReason, [nextStarReasonPlaceholder]);
-      if (!storedPOMVote || storedPOMVote.targetUserId !== finalPomSelection || (storedPOMVote.reason || "") !== cleanedPomReason) {
-        window.PlaylogOfficialData.saveMatchAwardVote({
-          matchId: selectedMatchId,
-          voterUserId: currentUserId,
-          targetUserId: finalPomSelection,
-          type: "pom",
-          reason: cleanedPomReason,
-          createdAt: new Date().toISOString(),
-        });
-      }
-      if (!storedNextStarVote || storedNextStarVote.targetUserId !== finalNextStarSelection || (storedNextStarVote.reason || "") !== cleanedNextStarReason) {
-        window.PlaylogOfficialData.saveMatchAwardVote({
-          matchId: selectedMatchId,
-          voterUserId: currentUserId,
-          targetUserId: finalNextStarSelection,
-          type: "next_star",
-          reason: cleanedNextStarReason,
-          createdAt: new Date().toISOString(),
-        });
+      try {
+        if (!storedPOMVote || storedPOMVote.targetUserId !== finalPomSelection || (storedPOMVote.reason || "") !== cleanedPomReason) {
+          await saveMatchAwardVoteAsync({
+            matchId: selectedMatchId,
+            voterUserId: currentUserId,
+            targetUserId: finalPomSelection,
+            type: "pom",
+            reason: cleanedPomReason,
+            createdAt: new Date().toISOString(),
+          });
+        }
+        if (!storedNextStarVote || storedNextStarVote.targetUserId !== finalNextStarSelection || (storedNextStarVote.reason || "") !== cleanedNextStarReason) {
+          await saveMatchAwardVoteAsync({
+            matchId: selectedMatchId,
+            voterUserId: currentUserId,
+            targetUserId: finalNextStarSelection,
+            type: "next_star",
+            reason: cleanedNextStarReason,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      } catch (error) {
+        reportSupabaseError(error, "Supabase 경기 투표 저장 실패");
+        return;
       }
       showToast("경기 투표가 저장되었습니다");
       justCompletedAwards = true;
@@ -3918,6 +3933,7 @@ window.PlaylogApp = {
 disableLocalFriendFallback();
 disableLocalMatchFallback();
 disableLocalEvaluationFallback();
+disableLocalAwardVoteFallback();
 bindInteractions();
 if (isCurrentUserApproved()) {
   renderHome();

@@ -16,6 +16,7 @@ function officialData() {
   window.PlaylogOfficialData.playerMatchCards = window.PlaylogOfficialData.playerMatchCards || [];
   window.PlaylogOfficialData.playerCurrentStats = window.PlaylogOfficialData.playerCurrentStats || [];
   window.PlaylogOfficialData.playerMonthlyCards = window.PlaylogOfficialData.playerMonthlyCards || [];
+  window.PlaylogOfficialData.matchAwardVotes = window.PlaylogOfficialData.matchAwardVotes || [];
   return window.PlaylogOfficialData;
 }
 
@@ -145,6 +146,38 @@ function toMatchParticipantRows(match) {
     joined_at: participant.joinedAt || match.date,
     evaluation_completed: participant.evaluationCompleted === true,
   }));
+}
+
+function awardVoteId(vote) {
+  return vote.id || `award:${vote.matchId}:${vote.voterUserId}:${vote.type}`;
+}
+
+function fromAwardVoteRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    matchId: row.match_id,
+    voterUserId: row.voter_user_id,
+    targetUserId: row.target_user_id,
+    type: row.type,
+    reason: row.reason || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toAwardVoteRow(vote) {
+  const now = new Date().toISOString();
+  return {
+    id: awardVoteId(vote),
+    match_id: vote.matchId,
+    voter_user_id: vote.voterUserId,
+    target_user_id: vote.targetUserId,
+    type: vote.type,
+    reason: vote.reason || "",
+    created_at: vote.createdAt || now,
+    updated_at: vote.updatedAt || now,
+  };
 }
 
 function fromEvaluationRow(row, scoreRows = [], traitRows = [], highlightRows = []) {
@@ -441,6 +474,28 @@ function mergeEvaluations(evaluations = []) {
     const index = data.evaluations.findIndex((item) => item.id === evaluation.id);
     if (index >= 0) data.evaluations[index] = { ...data.evaluations[index], ...evaluation };
     else data.evaluations.push(evaluation);
+  });
+}
+
+function replaceAwardVotesForMatches(matchIds = [], votes = []) {
+  const data = officialData();
+  const matchIdSet = new Set(matchIds);
+  for (let index = data.matchAwardVotes.length - 1; index >= 0; index -= 1) {
+    if (matchIdSet.has(data.matchAwardVotes[index].matchId)) data.matchAwardVotes.splice(index, 1);
+  }
+  votes.filter(Boolean).forEach((vote) => data.matchAwardVotes.push(vote));
+}
+
+function mergeAwardVotes(votes = []) {
+  const data = officialData();
+  votes.filter(Boolean).forEach((vote) => {
+    const index = data.matchAwardVotes.findIndex((item) =>
+      item.matchId === vote.matchId
+      && item.voterUserId === vote.voterUserId
+      && item.type === vote.type,
+    );
+    if (index >= 0) data.matchAwardVotes[index] = { ...data.matchAwardVotes[index], ...vote };
+    else data.matchAwardVotes.push(vote);
   });
 }
 
@@ -900,6 +955,75 @@ async function saveEvaluation(evaluation) {
   return saved;
 }
 
+async function refreshAwardVotes(userId) {
+  assertClient();
+  const { data: participantRows, error: participantsError } = await supabase
+    .from("match_participants")
+    .select("match_id")
+    .eq("user_id", userId);
+  if (participantsError) {
+    reportSupabaseQueryError("refreshAwardVotes:selectParticipantMatches", participantsError);
+    throw participantsError;
+  }
+  const matchIds = [...new Set((participantRows || []).map((participant) => participant.match_id).filter(Boolean))];
+  if (!matchIds.length) {
+    replaceAwardVotesForMatches([], []);
+    return [];
+  }
+  const { data, error } = await supabase
+    .from("award_votes")
+    .select("*")
+    .in("match_id", matchIds);
+  if (error) {
+    reportSupabaseQueryError("refreshAwardVotes:selectAwardVotes", error);
+    throw error;
+  }
+  const votes = (data || []).map(fromAwardVoteRow);
+  replaceAwardVotesForMatches(matchIds, votes);
+  return votes;
+}
+
+async function saveMatchAwardVote(vote) {
+  assertClient();
+  const data = officialData();
+  const match = data.matches.find((item) => item.id === vote.matchId);
+  if (!match) throw new Error("등록된 경기만 투표를 저장할 수 있습니다.");
+  const participantIds = (match.participants || []).map((participant) => participant.userId);
+  if (!participantIds.includes(vote.voterUserId) || !participantIds.includes(vote.targetUserId)) {
+    throw new Error("경기 참가자만 투표 대상이 될 수 있습니다.");
+  }
+  if (vote.voterUserId === vote.targetUserId) {
+    throw new Error("본인에게는 투표를 할 수 없습니다.");
+  }
+  if (typeof data.isParticipantEvaluationComplete === "function"
+    && !data.isParticipantEvaluationComplete(vote.matchId, vote.voterUserId)) {
+    throw new Error("평가를 완료한 후 투표를 할 수 있습니다.");
+  }
+  if (!["pom", "next_star"].includes(vote.type)) {
+    throw new Error("지원하지 않는 경기 투표 타입입니다.");
+  }
+  const existingVote = data.matchAwardVotes.find((item) =>
+    item.matchId === vote.matchId
+    && item.voterUserId === vote.voterUserId
+    && item.type === vote.type,
+  );
+  if (match.status === "published" && existingVote) {
+    throw new Error("공개된 경기의 투표는 수정할 수 없습니다.");
+  }
+
+  const { data: savedRows, error } = await supabase
+    .from("award_votes")
+    .upsert(toAwardVoteRow(vote), { onConflict: "match_id,voter_user_id,type" })
+    .select("*");
+  if (error) {
+    reportSupabaseQueryError("saveMatchAwardVote:upsertAwardVote", error);
+    throw error;
+  }
+  const saved = fromAwardVoteRow(firstReturnedRow(savedRows, "saveMatchAwardVote:upsertAwardVote"));
+  mergeAwardVotes([saved]);
+  return saved;
+}
+
 async function refreshPlayerCards(userId) {
   assertClient();
   const { data: participantRows, error: participantsError } = await supabase
@@ -999,6 +1123,7 @@ async function bootstrapUserData(userId) {
   await refreshFriends(userId);
   await refreshMatches(userId);
   await refreshEvaluations(userId);
+  await refreshAwardVotes(userId);
   await refreshPlayerCards(userId);
 }
 
@@ -1018,6 +1143,8 @@ window.PlaylogSupabase = {
   publishMatch,
   refreshEvaluations,
   saveEvaluation,
+  refreshAwardVotes,
+  saveMatchAwardVote,
   refreshPlayerCards,
   upsertGeneratedCards,
   bootstrapUserData,
