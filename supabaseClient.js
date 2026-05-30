@@ -629,6 +629,46 @@ async function createMatch(match) {
   return saved;
 }
 
+async function updateMatchParticipantCompletion(matchId, userId, evaluationCompleted) {
+  assertClient();
+  const { data, error } = await supabase
+    .from("match_participants")
+    .update({ evaluation_completed: evaluationCompleted === true })
+    .eq("match_id", matchId)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  const appMatch = officialData().matches.find((match) => match.id === matchId);
+  const participant = appMatch?.participants?.find((item) => item.userId === userId);
+  if (participant) participant.evaluationCompleted = data.evaluation_completed === true;
+  return fromMatchParticipantRow(data);
+}
+
+async function publishMatch(matchId, publishedAt = new Date().toISOString()) {
+  assertClient();
+  const { data, error } = await supabase
+    .from("matches")
+    .update({ status: "published", published_at: publishedAt })
+    .eq("id", matchId)
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  const appMatch = officialData().matches.find((match) => match.id === matchId);
+  if (appMatch) {
+    appMatch.status = data.status || "published";
+    appMatch.publishedAt = data.published_at;
+  }
+  return fromMatchRow(data, appMatch?.participants?.map((participant) => ({
+    match_id: matchId,
+    user_id: participant.userId,
+    joined_at: participant.joinedAt,
+    evaluation_completed: participant.evaluationCompleted,
+  })) || []);
+}
+
 async function refreshEvaluations(userId) {
   assertClient();
   const { data: participantRows, error: participantsError } = await supabase
@@ -844,6 +884,8 @@ window.PlaylogSupabase = {
   addFriend,
   refreshMatches,
   createMatch,
+  updateMatchParticipantCompletion,
+  publishMatch,
   refreshEvaluations,
   saveEvaluation,
   refreshPlayerCards,

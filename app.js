@@ -342,35 +342,43 @@ async function upsertGeneratedCardsAsync(payload) {
   return requireSupabaseBridge().upsertGeneratedCards(payload);
 }
 
+async function updateMatchParticipantCompletionAsync(matchId, userId, evaluationCompleted) {
+  return requireSupabaseBridge().updateMatchParticipantCompletion(matchId, userId, evaluationCompleted);
+}
+
+async function publishMatchAsync(matchId, publishedAt) {
+  return requireSupabaseBridge().publishMatch(matchId, publishedAt);
+}
+
 function withUpsertedCard(cards, card) {
   const nextCards = (cards || []).filter((item) => item && item.id !== card.id);
   nextCards.push(card);
   return nextCards;
 }
 
-function buildGeneratedCardBundle(evaluation) {
+function buildGeneratedCardBundle({ matchId, userId, generatedAt }) {
   const matchCard = window.PlaylogOfficialData?.generateCardFor?.(
-    evaluation.matchId,
-    evaluation.targetUserId,
-    evaluation.updatedAt || evaluation.createdAt || new Date().toISOString(),
+    matchId,
+    userId,
+    generatedAt || new Date().toISOString(),
   );
   if (!matchCard) return null;
 
   const nextMatchCards = withUpsertedCard(window.PlaylogOfficialData?.playerMatchCards || [], matchCard);
   const previousStats = (window.PlaylogOfficialData?.playerCurrentStats || [])
-    .find((stats) => stats && stats.userId === evaluation.targetUserId) || null;
+    .find((stats) => stats && stats.userId === userId) || null;
   const currentStats = window.PlaylogEngine?.generatePlayerCurrentStats?.({
-    userId: evaluation.targetUserId,
+    userId,
     cards: nextMatchCards,
     previousStats,
     generatedAt: matchCard.generatedAt,
   }) || null;
   const monthKey = matchCard.generatedAt.slice(0, 7);
   const previousMonthlyCard = (window.PlaylogOfficialData?.playerMonthlyCards || [])
-    .filter((card) => card && card.userId === evaluation.targetUserId && card.monthKey < monthKey)
+    .filter((card) => card && card.userId === userId && card.monthKey < monthKey)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
   const monthlyCard = window.PlaylogEngine?.generatePlayerMonthlyCard?.({
-    userId: evaluation.targetUserId,
+    userId,
     monthKey,
     cards: nextMatchCards,
     previousMonthlyCard,
@@ -380,10 +388,41 @@ function buildGeneratedCardBundle(evaluation) {
   return { matchCard, currentStats, monthlyCard };
 }
 
-async function saveGeneratedCardsForEvaluation(evaluation) {
-  const bundle = buildGeneratedCardBundle(evaluation);
+async function saveGeneratedCardsForParticipant(matchId, userId, generatedAt) {
+  const bundle = buildGeneratedCardBundle({ matchId, userId, generatedAt });
   if (!bundle) return null;
   return upsertGeneratedCardsAsync(bundle);
+}
+
+async function syncMatchCompletionAndPublish(evaluation) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId);
+  if (!match) return { published: false, generatedCards: [] };
+
+  const evaluatorCompleted = window.PlaylogOfficialData?.markParticipantEvaluationCompleted?.(
+    evaluation.matchId,
+    evaluation.evaluatorUserId,
+  ) === true;
+  await updateMatchParticipantCompletionAsync(evaluation.matchId, evaluation.evaluatorUserId, evaluatorCompleted);
+
+  const allComplete = window.PlaylogOfficialData?.areAllParticipantsEvaluationsComplete?.(evaluation.matchId) === true;
+  const timestamp = evaluation.updatedAt || evaluation.createdAt || new Date().toISOString();
+  const deadlineReached = match.evaluationDeadlineAt
+    && new Date(timestamp).getTime() >= new Date(match.evaluationDeadlineAt).getTime();
+  if (!allComplete && !deadlineReached) return { published: false, generatedCards: [] };
+
+  await Promise.all((match.participants || []).map((participant) =>
+    updateMatchParticipantCompletionAsync(evaluation.matchId, participant.userId, participant.evaluationCompleted === true),
+  ));
+
+  const publishedAt = timestamp;
+  const publishedMatch = await publishMatchAsync(evaluation.matchId, publishedAt);
+  const generatedCards = [];
+  for (const participant of publishedMatch.participants || match.participants || []) {
+    if (participant.evaluationCompleted !== true) continue;
+    const savedCards = await saveGeneratedCardsForParticipant(evaluation.matchId, participant.userId, publishedAt);
+    if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
+  }
+  return { published: true, generatedCards };
 }
 
 function disableLocalEvaluationFallback() {
@@ -2952,10 +2991,11 @@ function renderEvaluation() {
       let savedEvaluation = null;
       try {
         savedEvaluation = await saveEvaluationAsync(evaluation);
-        const savedCards = await saveGeneratedCardsForEvaluation(savedEvaluation);
-        lastGeneratedCard = savedCards?.matchCard || null;
+        const publishResult = await syncMatchCompletionAndPublish(savedEvaluation);
+        lastGeneratedCard = publishResult.generatedCards
+          .find((card) => card.userId === savedEvaluation.targetUserId) || null;
       } catch (error) {
-        reportSupabaseError(error, "Supabase 평가/카드 저장 실패");
+        reportSupabaseError(error, "Supabase 평가 완료/공개 처리 실패");
         return;
       }
       showToast("평가가 자동 저장되었습니다");
