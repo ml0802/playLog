@@ -289,6 +289,16 @@ function displayUserName(userId) {
   return user?.nickname || user?.name || user?.playlogId || userNames[userId] || userId;
 }
 
+function displayUserLabel(userId, scopeUserIds = null) {
+  const baseName = displayUserName(userId);
+  const ids = scopeUserIds || (window.PlaylogOfficialData?.users || []).map((user) => user.id);
+  const duplicateCount = ids.filter((id) => displayUserName(id) === baseName).length;
+  if (duplicateCount <= 1) return baseName;
+  const user = appUser(userId);
+  const suffix = user?.playlogId || String(userId || "").replace(/^user:/, "");
+  return `${baseName} (@${suffix})`;
+}
+
 function saveLoginSession(userId) {
   const user = appUser(userId);
   if (!user || user.status !== "approved" || isRookieDemoSessionUser(userId)) return;
@@ -742,14 +752,15 @@ function evaluationTargetPlayers() {
   if (!targets?.length) {
     return fallbackPlayers.map((name) => ({ name, userId: playerIds[name] }));
   }
+  const targetUserIds = targets.map((participant) => participant.userId);
   return targets.map((participant) => ({
-    name: displayUserName(participant.userId),
+    name: displayUserLabel(participant.userId, targetUserIds),
     userId: participant.userId,
   }));
 }
 
 function selectedPlayerId() {
-  return evaluationTargetPlayers().find((player) => player.name === selectedPlayer)?.userId
+  return evaluationTargetPlayers().find((player) => player.userId === selectedPlayer)?.userId
     || playerIds[selectedPlayer];
 }
 
@@ -2857,7 +2868,7 @@ function enterEvaluationFlow(match) {
     return;
   }
   if (remaining.length) {
-    selectedPlayer = displayUserName(remaining[0].userId);
+    selectedPlayer = remaining[0].userId;
   }
   loadEvaluationDraft(activeEvaluationForTarget(selectedPlayerId()));
   loadAwardDraft();
@@ -2937,6 +2948,7 @@ function renderEvaluation() {
   const hasStoredAwards = Boolean(storedPOMVote && storedNextStarVote);
   const pomSelection = selectedPOMTargetId || storedPOMVote?.targetUserId || null;
   const nextStarSelection = selectedNextStarTargetId || storedNextStarVote?.targetUserId || null;
+  let selectedTargetId = selectedPlayerId();
   if (!selectedPOMTargetId && pomSelection) selectedPOMTargetId = pomSelection;
   if (!selectedNextStarTargetId && nextStarSelection) selectedNextStarTargetId = nextStarSelection;
   if (!pomReason && storedPOMVote?.reason) pomReason = storedPOMVote.reason;
@@ -2944,10 +2956,12 @@ function renderEvaluation() {
   const isAwardStep = currentStep === 6 && Boolean(match) && isAwardVotingEnabled(match) && remaining.length === 0
     && !hasStoredAwards;
   const isJustCompletedAwardStep = currentStep >= 7 && justCompletedAwards;
-  if (!targetPlayers.some((player) => player.name === selectedPlayer)) {
-    selectedPlayer = targetPlayers[0]?.name || "";
+  if (!targetPlayers.some((player) => player.userId === selectedTargetId)) {
+    selectedPlayer = targetPlayers[0]?.userId || "";
+    selectedTargetId = selectedPlayerId();
   }
-  document.querySelector("#currentTarget").textContent = selectedPlayer;
+  const selectedTargetLabel = targetPlayers.find((player) => player.userId === selectedTargetId)?.name || displayUserLabel(selectedTargetId);
+  document.querySelector("#currentTarget").textContent = selectedTargetLabel;
   document.querySelector(".eval-target").classList.remove("pulse");
   requestAnimationFrame(() => document.querySelector(".eval-target").classList.add("pulse"));
   document.querySelector("#stepTitle").textContent = isAwardStep ? "경기 투표" : currentStep >= 6 ? "평가 저장 완료" : flowSteps[currentStep];
@@ -2963,7 +2977,7 @@ function renderEvaluation() {
     return;
   }
   if (currentStep === 0) {
-    pane.innerHTML = `<div class="selector-grid">${targetPlayers.map((player) => `<button class="choice-card ${player.name === selectedPlayer ? "selected" : ""}" data-player="${player.name}" type="button">${player.name}<br><small>${remainingIds.has(player.userId) ? "평가하기" : "평가 완료"}</small></button>`).join("")}</div>${actions()}`;
+    pane.innerHTML = `<div class="selector-grid">${targetPlayers.map((player) => `<button class="choice-card ${player.userId === selectedPlayerId() ? "selected" : ""}" data-target-user-id="${player.userId}" type="button">${player.name}<br><small>${remainingIds.has(player.userId) ? "평가하기" : "평가 완료"}</small></button>`).join("")}</div>${actions()}`;
   } else if (currentStep === 1) {
     pane.innerHTML = `<div class="selector-grid">${positions.map(([key, label, desc]) => `<button class="choice-card ${key === selectedPosition ? "selected" : ""}" data-position="${key}" type="button"><strong>${label}</strong><br><small>${desc}</small></button>`).join("")}</div>${actions()}`;
   } else if (currentStep === 2) {
@@ -2985,7 +2999,7 @@ function renderEvaluation() {
       userId: selectedPlayerId(),
       evaluations: [buildEvaluation("evaluation:preview")],
     });
-    pane.innerHTML = `<label class="field-label evaluation-comment"><span>이 선수 한 줄 평</span><textarea id="evaluationComment" rows="4" placeholder="${evaluationCommentPlaceholder}">${escapeHtml(overallComment)}</textarea></label><div class="self-result"><span>${selectedPlayer} 예상 OVR</span><strong>${previewCard.overallRating}</strong></div>${actions("이전", "평가 저장 완료")}`;
+    pane.innerHTML = `<label class="field-label evaluation-comment"><span>이 선수 한 줄 평</span><textarea id="evaluationComment" rows="4" placeholder="${evaluationCommentPlaceholder}">${escapeHtml(overallComment)}</textarea></label><div class="self-result"><span>${selectedTargetLabel} 예상 OVR</span><strong>${previewCard.overallRating}</strong></div>${actions("이전", "평가 저장 완료")}`;
   } else if (isAwardStep) {
     const candidates = targetPlayers;
     pane.innerHTML = `<div class="complete-card award-card"><h2>오늘 가장 인상 깊었던 선수</h2><p>POM은 OVR에 영향을 주지 않으며 결과 공개 시 함께 공개됩니다.</p><div class="selector-grid">${candidates.map((player) => `<button class="choice-card ${pomSelection === player.userId ? "selected" : ""}" data-pom-target="${player.userId}" type="button">${player.name}<br><small>선택하기</small></button>`).join("")}</div><label class="field-label award-reason"><span>POM 선정 이유</span><input id="pomReason" value="${escapeHtml(pomReason)}" placeholder="${pomReasonPlaceholder}" /></label><h2>다음 경기 주인공</h2><p>다음 경기에서 기대되는 선수를 참가자 중 한 명 선택해주세요.</p><div class="selector-grid">${candidates.map((player) => `<button class="choice-card ${nextStarSelection === player.userId ? "selected" : ""}" data-next-star-target="${player.userId}" type="button">${player.name}<br><small>선택하기</small></button>`).join("")}</div><label class="field-label award-reason"><span>다음 경기 주인공 선정 이유</span><input id="nextStarReason" value="${escapeHtml(nextStarReason)}" placeholder="${nextStarReasonPlaceholder}" /></label><button class="primary full" data-submit-awards type="button" ${pomSelection && nextStarSelection ? "" : "disabled"}>투표 저장</button></div>`;
@@ -3045,10 +3059,10 @@ function renderEvaluation() {
     const completeCopy = resultReady
       ? "결과가 공개되었습니다."
       : "평가가 저장되었습니다.<br>결과 공개를 기다리는 중입니다.";
-    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>${completeTitle}</h2><p>${completeCopy}</p>${awardNote}<div class="self-result"><span>${selectedPlayer} ${resultReady ? "생성 OVR" : "결과 상태"}</span><strong>${resultReady ? (lastGeneratedCard?.overallRating || "-") : "대기"}</strong></div><button class="primary full" data-complete-action type="button">${actionLabel}</button>${match && remaining.length === 0 ? '<button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요?</button>' : ""}</div>`;
+    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>${completeTitle}</h2><p>${completeCopy}</p>${awardNote}<div class="self-result"><span>${selectedTargetLabel} ${resultReady ? "생성 OVR" : "결과 상태"}</span><strong>${resultReady ? (lastGeneratedCard?.overallRating || "-") : "대기"}</strong></div><button class="primary full" data-complete-action type="button">${actionLabel}</button>${match && remaining.length === 0 ? '<button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요?</button>' : ""}</div>`;
     pane.querySelector("[data-complete-action]")?.addEventListener("click", () => {
       if (remaining.length) {
-        selectedPlayer = displayUserName(remaining[0].userId);
+        selectedPlayer = remaining[0].userId;
         loadEvaluationDraft(activeEvaluationForTarget(selectedPlayerId()));
         resetAwardDraft();
         justCompletedAwards = false;
@@ -3063,13 +3077,13 @@ function renderEvaluation() {
     return;
   }
 
-  pane.querySelectorAll("[data-player]").forEach((button) => button.addEventListener("click", () => {
-    if (selectedPlayer !== button.dataset.player) {
-      selectedPlayer = button.dataset.player;
+  pane.querySelectorAll("[data-target-user-id]").forEach((button) => button.addEventListener("click", () => {
+    if (selectedPlayerId() !== button.dataset.targetUserId) {
+      selectedPlayer = button.dataset.targetUserId;
       loadEvaluationDraft(activeEvaluationForTarget(selectedPlayerId()));
       resetAwardDraft();
     }
-    showToast(`${selectedPlayer} 선수를 평가합니다`);
+    showToast(`${targetPlayers.find((player) => player.userId === selectedPlayerId())?.name || displayUserLabel(selectedPlayerId())} 선수를 평가합니다`);
     renderEvaluation();
   }));
   pane.querySelectorAll("[data-position]").forEach((button) => button.addEventListener("click", () => {
