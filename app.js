@@ -166,6 +166,9 @@ let evaluationMode = "list";
 let reflectionMode = "list";
 let newMatchDraft = null;
 let authMode = "landing";
+let selectedFriendProfileId = null;
+let showingMyProfile = false;
+let activeRookieSessionId = null;
 let toastTimer;
 
 function resetEvaluationDraft() {
@@ -266,9 +269,102 @@ function isCurrentUserApproved() {
   return appUser(currentUserId)?.status === "approved";
 }
 
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function replaceRookieRefs(value, sessionId, token) {
+  if (typeof value === "string") {
+    return value
+      .replaceAll("user:rookie-demo", sessionId)
+      .replaceAll("match:rookie-", `match:rookie-session-${token}-`)
+      .replaceAll("rookie-demo", `rookie-session-${token}`)
+      .replaceAll("rookie-active", `rookie-session-${token}-active`)
+      .replaceAll("evaluation:rookie:", `evaluation:rookie-session-${token}:`)
+      .replaceAll("trait:rookie:", `trait:rookie-session-${token}:`)
+      .replaceAll("highlight:rookie:", `highlight:rookie-session-${token}:`);
+  }
+  if (Array.isArray(value)) return value.map((item) => replaceRookieRefs(item, sessionId, token));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replaceRookieRefs(item, sessionId, token)]));
+  }
+  return value;
+}
+
+function cleanupRookieDemoSessions() {
+  const data = window.PlaylogOfficialData;
+  if (!data) return;
+  const isSessionUser = (id = "") => String(id).startsWith("user:rookie-session-");
+  const isSessionMatch = (match) =>
+    String(match?.id || "").includes("rookie-session-")
+    || (match?.participants || []).some((participant) => isSessionUser(participant.userId));
+  const sessionMatchIds = new Set((data.matches || [])
+    .filter(isSessionMatch)
+    .map((match) => match.id));
+  const prune = (collection, predicate) => {
+    if (!Array.isArray(collection)) return;
+    for (let index = collection.length - 1; index >= 0; index -= 1) {
+      if (predicate(collection[index])) collection.splice(index, 1);
+    }
+  };
+  prune(data.users, (user) => isSessionUser(user.id));
+  prune(data.friends, (friend) => isSessionUser(friend.userId) || isSessionUser(friend.friendUserId));
+  prune(data.matchAwardVotes, (vote) => isSessionUser(vote.voterUserId) || isSessionUser(vote.targetUserId) || sessionMatchIds.has(vote.matchId));
+  prune(data.evaluations, (evaluation) => isSessionUser(evaluation.evaluatorUserId) || isSessionUser(evaluation.targetUserId) || sessionMatchIds.has(evaluation.matchId));
+  prune(data.playerMatchCards, (card) => isSessionUser(card.userId) || sessionMatchIds.has(card.matchId));
+  prune(data.playerCurrentStats, (stats) => isSessionUser(stats.userId));
+  prune(data.playerMonthlyCards, (card) => isSessionUser(card.userId));
+  prune(data.selfReflections, (reflection) => isSessionUser(reflection.userId) || sessionMatchIds.has(reflection.matchId));
+  prune(data.matches, isSessionMatch);
+  activeRookieSessionId = null;
+}
+
+function startRookieDemoSession() {
+  const data = window.PlaylogOfficialData;
+  if (!data) return loginAs("user:rookie-demo");
+  cleanupRookieDemoSessions();
+  const token = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const sessionId = `user:rookie-session-${token}`;
+  const baseUserId = "user:rookie-demo";
+  const baseMatchIds = new Set((data.matches || [])
+    .filter((match) => (match.participants || []).some((participant) => participant.userId === baseUserId))
+    .map((match) => match.id));
+  const copy = (item) => replaceRookieRefs(cloneData(item), sessionId, token);
+  const baseUser = data.users.find((user) => user.id === baseUserId);
+  if (baseUser) data.users.push(copy(baseUser));
+  (data.friends || [])
+    .filter((friend) => friend.userId === baseUserId || friend.friendUserId === baseUserId)
+    .forEach((friend) => data.friends.push(copy(friend)));
+  (data.matches || [])
+    .filter((match) => baseMatchIds.has(match.id))
+    .forEach((match) => data.matches.push(copy(match)));
+  (data.evaluations || [])
+    .filter((evaluation) => baseMatchIds.has(evaluation.matchId) || evaluation.evaluatorUserId === baseUserId || evaluation.targetUserId === baseUserId)
+    .forEach((evaluation) => data.evaluations.push(copy(evaluation)));
+  (data.matchAwardVotes || [])
+    .filter((vote) => baseMatchIds.has(vote.matchId) || vote.voterUserId === baseUserId || vote.targetUserId === baseUserId)
+    .forEach((vote) => data.matchAwardVotes.push(copy(vote)));
+  (data.playerMatchCards || [])
+    .filter((card) => baseMatchIds.has(card.matchId) || card.userId === baseUserId)
+    .forEach((card) => data.playerMatchCards.push(copy(card)));
+  (data.playerCurrentStats || [])
+    .filter((stats) => stats.userId === baseUserId)
+    .forEach((stats) => data.playerCurrentStats.push(copy(stats)));
+  (data.playerMonthlyCards || [])
+    .filter((card) => card.userId === baseUserId)
+    .forEach((card) => data.playerMonthlyCards.push(copy(card)));
+  (data.selfReflections || [])
+    .filter((reflection) => reflection.userId === baseUserId || baseMatchIds.has(reflection.matchId))
+    .forEach((reflection) => data.selfReflections.push(copy(reflection)));
+  activeRookieSessionId = sessionId;
+  loginAs(sessionId);
+}
+
 function loginAs(userId) {
   currentUserId = userId;
   selectedAvatar = appUser(userId)?.profilePreset || "free-1";
+  selectedFriendProfileId = null;
+  showingMyProfile = false;
   const nextMatch = (window.PlaylogOfficialData?.matches || [])
     .filter((match) => (match.participants || []).some((participant) => participant.userId === userId))
     .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())[0];
@@ -287,10 +383,14 @@ function loginAs(userId) {
 }
 
 function logout() {
+  const shouldCleanupRookieSession = activeRookieSessionId && currentUserId === activeRookieSessionId;
   currentUserId = null;
   selectedAvatar = "free-1";
+  selectedFriendProfileId = null;
+  showingMyProfile = false;
   authMode = "landing";
   closeSheet();
+  if (shouldCleanupRookieSession) cleanupRookieDemoSessions();
   setView("auth");
 }
 
@@ -432,15 +532,154 @@ function isAcceptedFriend(userId) {
 function friendProfileSummary(userId) {
   const cards = userMatchCards(userId);
   const latestCard = cards[0];
+  const currentStats = currentStatsForUser(userId);
   return {
-    position: positionLabels[latestCard?.mainEvaluatedPosition]?.[0] || "포지션 분석 준비중",
-    ovr: latestCard?.overallRating ? `OVR ${latestCard.overallRating}` : "OVR 분석 준비중",
-    style: latestCard?.playStyle || "플레이유형 분석 준비중",
+    position: positionLabels[currentStats?.currentMainPosition || latestCard?.mainEvaluatedPosition]?.[0] || "포지션 분석 준비중",
+    ovr: currentStats?.currentOVR ? `OVR ${currentStats.currentOVR}` : latestCard?.overallRating ? `OVR ${latestCard.overallRating}` : "OVR 분석 준비중",
+    style: currentStats?.currentPlayStyle || latestCard?.playStyle || "플레이유형 분석 준비중",
     recentTogether: (window.PlaylogOfficialData?.matches || []).some((match) =>
       (match.participants || []).some((participant) => participant.userId === currentUserId)
       && (match.participants || []).some((participant) => participant.userId === userId),
     ),
   };
+}
+
+function friendCurrentFormProfile(userId) {
+  const user = appUser(userId) || {};
+  const stats = currentStatsForUser(userId);
+  const cards = currentFormWindowCardsForUser(userId);
+  const monthlyCard = latestMonthlyCardForUser(userId);
+  const mainPosition = stats?.currentMainPosition || user.mainPosition;
+  const position = positionLabels[mainPosition] || ["포지션 분석 준비중", "-"];
+  return {
+    user,
+    stats,
+    cards,
+    monthlyCard,
+    position,
+    playStyle: stats?.currentPlayStyle || user.preferredRole || "플레이유형 분석 준비중",
+    ovr: stats?.currentOVR ?? null,
+  };
+}
+
+function friendPositionDistribution(userId) {
+  const cards = currentFormWindowCardsForUser(userId);
+  return positionSummaryEntries(currentFormPositionSummary(cards));
+}
+
+function friendMatchCardSummary(card) {
+  const identity = representativeMatchIdentity(card);
+  const tags = cardTagItems(card).slice(0, 2);
+  return `
+    <button class="friend-profile-match" data-friend-profile-match="${card.matchId}" data-card-user="${card.userId}" type="button">
+      <span>OVR ${card.overallRating}</span>
+      <div>
+        <strong>${identity.label}</strong>
+        <p>${identity.playStyle}</p>
+      </div>
+      ${tags.length ? `<small>${tags.map((tag) => `<i>${tag}</i>`).join("")}</small>` : ""}
+    </button>
+  `;
+}
+
+function friendMonthlyCardSummary(card) {
+  const [year, month] = card.monthKey.split("-");
+  const position = positionLabels[card.mainPosition]?.[0] || "-";
+  const change = changeLabel(card.monthlyOVRChange);
+  return `
+    <button class="friend-profile-monthly" data-friend-profile-monthly="${card.monthKey}" data-card-user="${card.userId}" type="button">
+      <div>
+        <span>MONTHLY CARD</span>
+        <strong>${year}년 ${Number(month)}월 평균</strong>
+        <p>${position} · ${card.mainPlayStyle || "분석 준비중"} · ${card.matchCount}경기</p>
+      </div>
+      <b>OVR ${card.monthlyOVR}<em>${change}</em></b>
+    </button>
+  `;
+}
+
+function renderProfileView(userId, options = {}) {
+  const isMine = options.isMine === true;
+  const profile = friendCurrentFormProfile(userId);
+  const displayName = displayUserName(userId);
+  const preset = avatarPresetForUser(userId);
+  const positionDistribution = friendPositionDistribution(userId);
+  const recentCards = userMatchCards(userId).slice(0, 3);
+  const monthlyCard = profile.monthlyCard;
+  const hasOfficialData = recentCards.length || monthlyCard;
+  document.querySelector(".friend-highlight").innerHTML = `
+    <div class="friend-profile-nav">
+      <button class="friend-profile-back" data-profile-back type="button">← 친구 목록</button>
+    </div>
+    <article class="friend-profile-hero">
+      <div class="friend-profile-avatar" aria-hidden="true">
+        <span class="preset-thumb mini" style="${presetStyle(preset)}"></span>
+        <em>${profile.position[1]}</em>
+      </div>
+      <div>
+        <small>${isMine ? "MY PROFILE" : "FRIEND PROFILE"}</small>
+        <h3>${escapeHtml(displayName)}</h3>
+        <p>@${escapeHtml(profile.user.playlogId || "-")}</p>
+        <strong>${profile.position[0]} · ${profile.playStyle}</strong>
+        <b>${profile.ovr ? `OVR ${profile.ovr}` : "OVR -"}</b>
+      </div>
+    </article>
+  `;
+  document.querySelector("#friendList").innerHTML = `
+    <section class="friend-profile">
+      ${hasOfficialData ? "" : `<article class="friend-profile-empty"><strong>아직 공식 경기 기록이 없습니다.</strong><p>친구가 공식 경기를 완료하면 CURRENT FORM과 카드 기록이 이곳에 표시됩니다.</p></article>`}
+      <article class="friend-profile-section">
+        <div class="friend-profile-section-head"><div class="section-title-group"><strong>CURRENT FORM 요약</strong><span>최근 60일 기준</span></div></div>
+        <div class="friend-profile-summary-grid">
+          <span>현재 OVR<strong>${profile.ovr ?? "-"}</strong></span>
+          <span>대표 포지션<strong>${profile.position[0]}</strong></span>
+          <span>플레이유형<strong>${profile.playStyle}</strong></span>
+          <span>최근 경기 수<strong>${profile.stats?.recentMatchCount || recentCards.length || 0}경기</strong></span>
+        </div>
+      </article>
+      <article class="friend-profile-section">
+        <div class="friend-profile-section-head"><div class="section-title-group"><strong>포지션 분포</strong><span>CURRENT FORM</span></div></div>
+        <div class="friend-position-list">
+          ${positionDistribution.length
+            ? positionDistribution.map((entry) => `<span>${entry.label}<strong>${entry.count}회</strong></span>`).join("")
+            : `<span>포지션 기록<strong>-</strong></span>`}
+        </div>
+      </article>
+      <article class="friend-profile-section">
+        <div class="friend-profile-section-head"><div class="section-title-group"><strong>최근 경기 카드</strong><span>최대 3개</span></div></div>
+        <div class="friend-profile-match-list">
+          ${recentCards.length ? recentCards.map(friendMatchCardSummary).join("") : `<p class="friend-profile-note">아직 완료된 경기 카드가 없습니다.</p>`}
+        </div>
+      </article>
+      <article class="friend-profile-section">
+        <div class="friend-profile-section-head"><div class="section-title-group"><strong>월 카드</strong><span>최신 1개</span></div></div>
+        ${monthlyCard ? friendMonthlyCardSummary(monthlyCard) : `<p class="friend-profile-note">아직 월 카드가 없습니다.</p>`}
+      </article>
+      ${isMine ? `
+        <div class="my-profile-actions">
+          <button class="primary full" data-edit-my-profile type="button">프로필 수정</button>
+          <button class="secondary full" data-my-profile-logout type="button">로그아웃</button>
+        </div>
+      ` : ""}
+    </section>
+  `;
+  document.querySelector("[data-profile-back]")?.addEventListener("click", () => {
+    selectedFriendProfileId = null;
+    showingMyProfile = false;
+    renderFriends();
+  });
+  document.querySelector("[data-edit-my-profile]")?.addEventListener("click", () => {
+    openSheet("profileEdit");
+  });
+  document.querySelector("[data-my-profile-logout]")?.addEventListener("click", logout);
+}
+
+function renderFriendProfile(userId) {
+  renderProfileView(userId, { isMine: false });
+}
+
+function renderMyProfile() {
+  renderProfileView(currentUserId, { isMine: true });
 }
 
 function resetNewMatchDraft() {
@@ -540,13 +779,13 @@ function radarStats(ratings) {
   ].map(([label, score]) => [label, Math.round(40 + score * 5.5)]);
 }
 
-function currentHomeStats() {
+function currentStatsForUser(userId = currentUserId) {
   const existingStats = window.PlaylogOfficialData?.playerCurrentStats
-    ?.find((stats) => stats && stats.userId === currentUserId) || null;
-  const cards = recentOfficialCards(60);
+    ?.find((stats) => stats && stats.userId === userId) || null;
+  const cards = recentOfficialCardsForUser(userId, 60);
   if (cards.length && window.PlaylogEngine?.generatePlayerCurrentStats) {
     const currentFormStats = window.PlaylogEngine.generatePlayerCurrentStats({
-      userId: currentUserId,
+      userId,
       cards,
       generatedAt: existingStats?.generatedAt || new Date().toISOString(),
     });
@@ -560,10 +799,10 @@ function currentHomeStats() {
       };
     }
   }
-  const monthlyCard = latestHomeMonthlyCard();
+  const monthlyCard = latestMonthlyCardForUser(userId);
   if (!monthlyCard) return existingStats;
   return {
-    userId: currentUserId,
+    userId,
     currentOVR: monthlyCard.monthlyOVR,
     previousOVR: monthlyCard.previousMonthlyOVR,
     ovrChange: monthlyCard.monthlyOVRChange,
@@ -580,17 +819,29 @@ function currentHomeStats() {
   };
 }
 
-function recentOfficialCards(days = 60) {
+function currentHomeStats() {
+  return currentStatsForUser(currentUserId);
+}
+
+function recentOfficialCardsForUser(userId = currentUserId, days = 60) {
   const now = new Date("2026-05-28T00:00:00.000Z").getTime();
   const windowMs = days * 24 * 60 * 60 * 1000;
   return (window.PlaylogOfficialData?.playerMatchCards || [])
-    .filter((card) => card && card.userId === currentUserId && card.generatedAt)
+    .filter((card) => card && card.userId === userId && card.generatedAt)
     .filter((card) => now - new Date(card.generatedAt).getTime() <= windowMs)
     .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime());
 }
 
+function recentOfficialCards(days = 60) {
+  return recentOfficialCardsForUser(currentUserId, days);
+}
+
+function currentFormWindowCardsForUser(userId = currentUserId) {
+  return recentOfficialCardsForUser(userId, 60).slice(0, 4);
+}
+
 function currentFormWindowCards() {
-  return recentOfficialCards(60).slice(0, 4);
+  return currentFormWindowCardsForUser(currentUserId);
 }
 
 function currentFormBasisLabel(stats) {
@@ -604,10 +855,14 @@ function currentFormBasisLabel(stats) {
   return `${basis} · 최근 60일 기준`;
 }
 
-function latestHomeMonthlyCard() {
+function latestMonthlyCardForUser(userId = currentUserId) {
   return (window.PlaylogOfficialData?.playerMonthlyCards || [])
-    .filter((card) => card && card.userId === currentUserId)
+    .filter((card) => card && card.userId === userId)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
+}
+
+function latestHomeMonthlyCard() {
+  return latestMonthlyCardForUser(currentUserId);
 }
 
 function playerCurrentRadarStats(stats) {
@@ -895,6 +1150,11 @@ function avatarPresetItems() {
 
 function currentAvatarPreset() {
   return avatarPresetItems().find((preset) => preset.key === selectedAvatar) || avatarPresetItems()[0];
+}
+
+function avatarPresetForUser(userId) {
+  const presetKey = appUser(userId)?.profilePreset || "free-1";
+  return avatarPresetItems().find((preset) => preset.key === presetKey) || avatarPresetItems()[0];
 }
 
 function presetStyle(preset) {
@@ -1284,7 +1544,7 @@ function participantStrengthTags(card, limit = 3) {
   return (card.strengthsTop3 || []).slice(0, limit).map(analysisItemLabel);
 }
 
-function largeCardShell({ type, name = "승현", kicker, title, subtitle, playStyle, playStyleCode, ovr, change, positionCode, radarData, tags, basis, detailLabel, detailKind, payloadKey, allowDetail = true, showHeader = true }) {
+function largeCardShell({ type, name = "승현", preset = currentAvatarPreset(), kicker, title, subtitle, playStyle, playStyleCode, ovr, change, positionCode, radarData, tags, basis, detailLabel, detailKind, payloadKey, allowDetail = true, showHeader = true }) {
   return `
     ${showHeader ? `<div class="result-title">
       <h3>${type}</h3>
@@ -1293,7 +1553,7 @@ function largeCardShell({ type, name = "승현", kicker, title, subtitle, playSt
     <article class="large-player-card">
       <div class="large-card-identity">
         <div class="large-card-avatar" aria-hidden="true">
-          <span class="preset-thumb mini" style="${presetStyle(currentAvatarPreset())}"></span>
+          <span class="preset-thumb mini" style="${presetStyle(preset)}"></span>
           <em>${positionCode}</em>
         </div>
         <div class="large-card-copy">
@@ -1324,7 +1584,8 @@ function matchCardViewTemplate(card, options = {}) {
   const roleInfo = roleMatchInfo(card);
   return largeCardShell({
     type: "MATCH CARD",
-    name: userNames[card.userId] || card.userId,
+    name: displayUserName(card.userId),
+    preset: avatarPresetForUser(card.userId),
     kicker: "MATCH CARD",
     title: `${matchTitle(card)} · ${matchDate(card)}`,
     subtitle: `${identity.label} · ${identity.code}`,
@@ -1349,6 +1610,8 @@ function monthlyCardViewTemplate(card) {
   const position = positionLabels[card.mainPosition] || ["-", "-"];
   return largeCardShell({
     type: "MONTHLY CARD",
+    name: displayUserName(card.userId),
+    preset: avatarPresetForUser(card.userId),
     kicker: "MONTHLY CARD",
     title: `${year}년 ${Number(month)}월 평균`,
     subtitle: `${position[0]} · ${position[1]}`,
@@ -1366,7 +1629,7 @@ function monthlyCardViewTemplate(card) {
     basis: `${year}년 ${Number(month)}월 전체 경기 단순 평균 · 가중치 없음`,
     detailLabel: "월간 리포트 보기",
     detailKind: "monthlyReport",
-    payloadKey: card.monthKey,
+    payloadKey: `${card.userId}::${card.monthKey}`,
   });
 }
 
@@ -1800,6 +2063,7 @@ function showToast(message) {
 function openSheet(kind, payload = null) {
   const overlay = document.querySelector("#overlay");
   const sheet = document.querySelector("#sheet");
+  const me = appUser(currentUserId) || {};
   const officialAnalysisCard = payload?.overallRating ? payload : latestHomeAnalysisCard();
   const currentFormCard = currentFormAnalysisCard();
   const monthlyReportCard = payload?.monthKey ? payload : latestHomeMonthlyCard();
@@ -1821,6 +2085,24 @@ function openSheet(kind, payload = null) {
       <label class="field-label"><span>Playlog ID</span><input id="friendPlaylogIdSearch" placeholder="예: minsu10" /></label>
       <button class="primary full" id="searchFriendById" type="button">검색</button>
       <div class="friend-search-result" id="friendSearchResult"></div>
+    `,
+    profileEdit: `
+      <h3>내 프로필 수정</h3>
+      <p>플레이로그에서 보이는 내 선수 정보를 수정합니다.</p>
+      <label class="field-label"><span>닉네임</span><input id="profileEditNickname" value="${escapeHtml(me.nickname || me.name || "")}" placeholder="닉네임" /></label>
+      <label class="field-label"><span>주 포지션</span><select id="profileEditPosition">
+        ${Object.entries(positionLabels)
+          .filter(([key]) => ["attack", "am", "dm", "defense", "free"].includes(key))
+          .map(([key, label]) => `<option value="${key}" ${me.mainPosition === key ? "selected" : ""}>${label[0]} · ${label[1]}</option>`).join("")}
+      </select></label>
+      <label class="field-label"><span>선호 역할</span><select id="profileEditRole">${signupRoleOptionsHtml(me.mainPosition || "free", me.preferredRole || "")}</select></label>
+      <label class="field-label"><span>프로필 프리셋</span><select id="profileEditPreset">
+        ${avatarPresetItems().map((preset) => `<option value="${preset.key}" ${me.profilePreset === preset.key ? "selected" : ""}>${preset.name}</option>`).join("")}
+      </select></label>
+      <div class="profile-edit-actions">
+        <button class="secondary full" data-close-sheet type="button">취소</button>
+        <button class="primary full" id="saveProfileEdit" type="button">저장</button>
+      </div>
     `,
     card: payload?.overallRating ? officialAnalysisTemplate(officialAnalysisCard) : currentFormCard ? currentFormAnalysisTemplate(currentFormCard) : `
       <div class="result-title">
@@ -1897,6 +2179,35 @@ function openSheet(kind, payload = null) {
     button.addEventListener("click", () => showToast(button.dataset.toastSheet));
   });
   sheet.querySelectorAll("[data-close-sheet]").forEach((button) => button.addEventListener("click", closeSheet));
+  sheet.querySelector("#profileEditPosition")?.addEventListener("change", (event) => {
+    const roleSelect = sheet.querySelector("#profileEditRole");
+    if (roleSelect) roleSelect.innerHTML = signupRoleOptionsHtml(event.target.value);
+  });
+  sheet.querySelector("#saveProfileEdit")?.addEventListener("click", () => {
+    const user = appUser(currentUserId);
+    if (!user) return;
+    const nickname = sheet.querySelector("#profileEditNickname")?.value.trim();
+    const mainPosition = sheet.querySelector("#profileEditPosition")?.value;
+    const preferredRole = sheet.querySelector("#profileEditRole")?.value;
+    const profilePreset = sheet.querySelector("#profileEditPreset")?.value;
+    if (!nickname) {
+      showToast("닉네임을 입력해주세요.");
+      return;
+    }
+    if (!preferredRole) {
+      showToast("선호 역할을 선택해주세요.");
+      return;
+    }
+    user.nickname = nickname;
+    user.mainPosition = mainPosition;
+    user.preferredRole = preferredRole;
+    user.profilePreset = profilePreset;
+    selectedAvatar = profilePreset;
+    closeSheet();
+    showToast("프로필을 저장했습니다.");
+    renderHome();
+    renderFriends();
+  });
   sheet.querySelector("[data-open-match-result-detail]")?.addEventListener("click", () => openSheet("matchResultDetail"));
   sheet.querySelector("[data-open-match-result-summary]")?.addEventListener("click", () => openSheet("matchResult"));
   sheet.querySelectorAll("[data-open-detail]").forEach((button) => {
@@ -1908,7 +2219,10 @@ function openSheet(kind, payload = null) {
         if (card) openSheet("card", card);
       }
       if (button.dataset.openDetail === "monthlyReport") {
-        const card = userMonthlyCards().find((item) => item.monthKey === button.dataset.detailKey);
+        const [userId, monthKey] = button.dataset.detailKey.includes("::")
+          ? button.dataset.detailKey.split("::")
+          : [currentUserId, button.dataset.detailKey];
+        const card = userMonthlyCards(userId).find((item) => item.monthKey === monthKey);
         if (card) openSheet("monthlyReport", card);
       }
     });
@@ -2806,7 +3120,7 @@ function renderAuth() {
       authMode = "signup";
       renderAuth();
     });
-    pane.querySelector("#quickLoginSeunghyun")?.addEventListener("click", () => loginAs("user:rookie-demo"));
+    pane.querySelector("#quickLoginSeunghyun")?.addEventListener("click", startRookieDemoSession);
     return;
   }
   if (user?.status === "pending") {
@@ -3048,6 +3362,14 @@ function renderCards() {
 }
 
 function renderFriends() {
+  if (showingMyProfile) {
+    renderMyProfile();
+    return;
+  }
+  if (selectedFriendProfileId) {
+    renderFriendProfile(selectedFriendProfileId);
+    return;
+  }
   const list = friendUsers();
   const pendingUsers = appUser(currentUserId)?.role === "admin"
     ? (window.PlaylogOfficialData?.users || []).filter((user) => user.status === "pending")
@@ -3059,9 +3381,17 @@ function renderFriends() {
   highlight.innerHTML = `
     <article class="my-friend-profile">
       <div><span>내 Playlog ID</span><strong>${displayUserName(currentUserId)}</strong><p>@${me?.playlogId || "-"}</p><small>${myPosition} · ${me?.preferredRole || "선호 역할 준비중"} · ${myStats?.currentOVR ? `OVR ${myStats.currentOVR}` : "분석 준비중"} · 친구 ${list.length}명</small></div>
-      <button type="button" id="logoutButton">로그아웃</button>
+      <div class="my-friend-actions">
+        <button type="button" id="myProfileOpen">내 프로필 보기</button>
+        <button type="button" id="logoutButton">로그아웃</button>
+      </div>
     </article>
   `;
+  document.querySelector("#myProfileOpen")?.addEventListener("click", () => {
+    showingMyProfile = true;
+    selectedFriendProfileId = null;
+    renderFriends();
+  });
   document.querySelector("#logoutButton")?.addEventListener("click", logout);
   document.querySelector("#friendList").innerHTML = `
     ${appUser(currentUserId)?.role === "admin" ? `
@@ -3074,7 +3404,7 @@ function renderFriends() {
       ${list.length
       ? list.map((friend) => {
         const summary = friendProfileSummary(friend.userId);
-        return `<article class="friend-card"><i>${friend.name.slice(0, 1)}</i><div><strong>${friend.name}</strong><p>${summary.position} · ${summary.ovr}</p><small>${summary.style}${summary.recentTogether ? " · 최근 함께 경기" : ""}</small></div><button data-toast="${friend.name}님은 친구 상태입니다" type="button">친구</button></article>`;
+        return `<button class="friend-card friend-card-button" data-friend-profile="${friend.userId}" type="button"><i>${friend.name.slice(0, 1)}</i><div><strong>${friend.name}</strong><p>${summary.position} · ${summary.ovr}</p><small>${summary.style}${summary.recentTogether ? " · 최근 함께 경기" : ""}</small></div><span class="friend-profile-arrow" aria-hidden="true">›</span></button>`;
       }).join("")
       : `<article class="friend-card empty-friend-card"><i>＋</i><div><strong>친구가 아직 없습니다.</strong><p>친구를 추가하면 새 경기 참가자로 선택할 수 있어요.</p></div></article>`}
   `;
@@ -3086,6 +3416,10 @@ function renderFriends() {
   document.querySelectorAll("[data-reject-user]").forEach((button) => button.addEventListener("click", () => {
     window.PlaylogOfficialData?.rejectUser?.(button.dataset.rejectUser);
     showToast("사용자를 거절했습니다.");
+    renderFriends();
+  }));
+  document.querySelectorAll("[data-friend-profile]").forEach((button) => button.addEventListener("click", () => {
+    selectedFriendProfileId = button.dataset.friendProfile;
     renderFriends();
   }));
 }
@@ -3109,6 +3443,20 @@ function setView(view) {
 
 function bindInteractions() {
   document.addEventListener("click", (event) => {
+    const friendProfileMatchButton = event.target.closest("[data-friend-profile-match]");
+    if (friendProfileMatchButton) {
+      const card = (window.PlaylogOfficialData?.playerMatchCards || [])
+        .find((item) => item.matchId === friendProfileMatchButton.dataset.friendProfileMatch && item.userId === friendProfileMatchButton.dataset.cardUser);
+      if (card) openSheet("cardView", card);
+      return;
+    }
+    const friendProfileMonthlyButton = event.target.closest("[data-friend-profile-monthly]");
+    if (friendProfileMonthlyButton) {
+      const card = userMonthlyCards(friendProfileMonthlyButton.dataset.cardUser)
+        .find((item) => item.monthKey === friendProfileMonthlyButton.dataset.friendProfileMonthly);
+      if (card) openSheet("monthlyCardView", card);
+      return;
+    }
     const matchCardButton = event.target.closest("[data-match-card]");
     if (matchCardButton) {
       const card = (window.PlaylogOfficialData?.playerMatchCards || [])

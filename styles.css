@@ -352,6 +352,17 @@ svg text { font-family: inherit; }
 .field-label, .reflection-card label { display: grid; gap: 8px; margin-top: 18px; color: var(--muted); font-weight: 800; text-align: left; }
 .field-label span { color: var(--ink); font-weight: 900; }
 .field-label textarea, .field-label input, .reflection-card textarea, .reflection-card input { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 12px; color: var(--ink); background: #fff; }
+.field-label select {
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0 16px;
+  color: var(--ink);
+  background: #fff;
+  font-size: 14px;
+  font-weight: 800;
+}
 .evaluation-comment textarea { min-height: 104px; resize: vertical; }
 .award-card { text-align: left; }
 .award-card h2 { margin-top: 18px; }
@@ -433,9 +444,10 @@ svg text { font-family: inherit; }
 .friend-highlight span { color: var(--purple); font-size: 12px; font-weight: 900; }
 .friend-highlight strong { display: block; margin-top: 6px; }
 .friend-highlight p { margin: 8px 0 0; color: var(--muted); }
-.my-friend-profile { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.my-friend-profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; }
 .my-friend-profile small { display: block; margin-top: 7px; color: var(--muted); line-height: 1.35; }
-.my-friend-profile button { flex: none; border-radius: 999px; padding: 8px 12px; background: #ede7ff; color: var(--purple); font-size: 12px; font-weight: 900; }
+.my-friend-actions { display: grid; gap: 6px; min-width: 92px; }
+.my-friend-profile button { border-radius: 999px; padding: 7px 10px; background: #ede7ff; color: var(--purple); font-size: 11px; font-weight: 900; white-space: nowrap; }
 .friend-list { display: grid; gap: 10px; }
 .friend-list article { padding: 14px; }
 .friend-list p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
@@ -450,6 +462,86 @@ svg text { font-family: inherit; }
 .friend-card small { display: block; margin-top: 4px; color: #8a8ca0; font-size: 11px; line-height: 1.35; }
 .friend-card.suggestion { background: #faf9ff; border-style: dashed; }
 .empty-friend-card { grid-template-columns: 42px 1fr; }
+.friend-card-button { width: 100%; padding: 14px; text-align: left; color: var(--ink); }
+.friend-list .friend-card-button { border-radius: 15px; background: #fff; color: var(--ink); font-weight: inherit; }
+.friend-card-button:active { transform: scale(.99); }
+.friend-profile-arrow { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #f2ecff; color: var(--purple); font-size: 22px; font-weight: 900; }
+.friend-profile-nav { margin: -2px 0 12px; }
+.friend-profile-back { min-height: 38px; padding: 0 14px; border-radius: 999px; background: #ede7ff; color: var(--purple); font-size: 14px; font-weight: 950; }
+.friend-profile-back:active { transform: scale(.98); }
+.friend-profile-hero { display: grid; grid-template-columns: 106px 1fr; gap: 14px; align-items: center; }
+.friend-profile-avatar { position: relative; aspect-ratio: .78; border-radius: 16px; overflow: hidden; background: radial-gradient(circle at 50% 25%, rgba(126,86,255,.35), transparent 60%), #141127; border: 1px solid rgba(126,86,255,.5); }
+.friend-profile-avatar .preset-thumb.mini { width: 100%; height: 100%; border-radius: 0; background-size: 552% auto; background-position: var(--preset-position) 19%; }
+.friend-profile-avatar em { position: absolute; left: 8px; bottom: 8px; padding: 6px 8px; border-radius: 10px; background: linear-gradient(135deg, var(--purple), #8d65ff); color: #fff; font-style: normal; font-size: 13px; font-weight: 900; }
+.friend-profile-hero small { color: var(--purple); font-size: 11px; font-weight: 950; letter-spacing: .06em; }
+.friend-profile-hero h3 { margin: 5px 0 2px; font-size: 25px; }
+.friend-profile-hero p { margin: 0 0 8px; color: var(--muted); }
+.friend-profile-hero strong { display: block; color: var(--ink); line-height: 1.3; }
+.friend-profile-hero b { display: block; margin-top: 10px; font-size: 24px; }
+.friend-profile { display: grid; gap: 12px; }
+.friend-profile-section, .friend-profile-empty { padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 8px 20px rgba(17,19,34,.04); }
+.friend-profile-empty { background: #faf9ff; }
+.friend-profile-empty strong { display: block; margin-bottom: 5px; }
+.friend-profile-empty p, .friend-profile-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.friend-profile-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+.section-title-group {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  max-width: 100%;
+}
+.section-title-group strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.section-title-group span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.friend-profile-summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.friend-profile-summary-grid span, .friend-position-list span { padding: 10px; border-radius: 12px; background: #faf9ff; color: var(--muted); font-size: 11px; font-weight: 800; }
+.friend-profile-summary-grid strong, .friend-position-list strong { display: block; margin-top: 4px; color: var(--ink); font-size: 13px; }
+.friend-position-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 2px; }
+.friend-profile-match-list { display: grid; gap: 8px; }
+.friend-profile-section > .friend-profile-monthly,
+.friend-profile-section > .friend-profile-note { margin-top: 2px; }
+.friend-profile-match, .friend-profile-monthly { width: 100%; display: grid; grid-template-columns: 68px 1fr; gap: 10px; align-items: center; padding: 12px; border: 1px solid #e4ddfb; border-radius: 14px; background: linear-gradient(145deg, #fff, #fbf9ff); color: var(--ink); text-align: left; }
+.friend-profile-match span { color: var(--purple); font-size: 12px; font-weight: 950; }
+.friend-profile-match strong, .friend-profile-monthly strong { display: block; font-size: 14px; }
+.friend-profile-match p, .friend-profile-monthly p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.friend-profile-match small { grid-column: 1 / -1; display: flex; gap: 5px; flex-wrap: wrap; }
+.friend-profile-match small i { padding: 4px 7px; border-radius: 999px; background: #f0eaff; color: var(--purple); font-size: 10px; font-style: normal; font-weight: 900; }
+.friend-profile-monthly { grid-template-columns: 1fr auto; }
+.friend-profile-monthly span { color: var(--purple); font-size: 10px; font-weight: 950; letter-spacing: .05em; }
+.friend-profile-monthly b { font-size: 18px; }
+.friend-profile-monthly em { display: block; color: #54c94c; font-size: 11px; font-style: normal; text-align: right; }
+.my-profile-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+.my-profile-actions .primary.full, .my-profile-actions .secondary.full {
+  width: 100%;
+  min-height: 42px;
+  margin: 0;
+  border: 1px solid #ded6f4;
+  border-radius: 12px;
+  background: #f7f3ff;
+  color: var(--purple);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 900;
+}
+.profile-edit-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+.profile-edit-actions .primary.full, .profile-edit-actions .secondary.full { width: 100%; min-height: 46px; margin: 0; border-radius: 13px; }
 .enhanced-search-card { grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; padding: 14px !important; border-color: #d8c9ff; border-radius: 18px; box-shadow: 0 14px 30px rgba(99,54,230,.1); }
 .enhanced-search-card i { width: 50px; height: 50px; border-radius: 50%; font-size: 22px; background: #eee8ff; }
 .search-card-body { min-width: 0; }
