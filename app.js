@@ -296,6 +296,18 @@ function isCurrentUserApproved() {
   return appUser(currentUserId)?.status === "approved";
 }
 
+function isRookieDemoSessionUser(userId = currentUserId) {
+  return userId === "user:rookie-demo" || String(userId || "").startsWith("user:rookie-session-");
+}
+
+function canSeeTestUsers() {
+  return isRookieDemoSessionUser() || Boolean(appUser(currentUserId)?.isTestUser);
+}
+
+function isHiddenFromPublicSearch(user) {
+  return Boolean(user?.isTestUser || user?.hiddenFromPublicSearch);
+}
+
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -531,10 +543,14 @@ function matchParticipantCandidates() {
 }
 
 function sampleUserOptions() {
-  const approvedUsers = (window.PlaylogOfficialData?.users || [])
-    .filter((user) => user.id !== currentUserId && user.status === "approved")
+  const officialUsers = window.PlaylogOfficialData?.users;
+  const approvedUsers = (officialUsers || [])
+    .filter((user) =>
+      user.id !== currentUserId
+      && user.status === "approved"
+      && (canSeeTestUsers() || !isHiddenFromPublicSearch(user)))
     .map((user) => ({ name: displayUserName(user.id), userId: user.id }));
-  if (approvedUsers.length) return approvedUsers;
+  if (Array.isArray(officialUsers)) return approvedUsers;
   return Object.entries(playerIds).map(([name, userId]) => ({ name: displayUserName(userId) || name, userId }));
 }
 
@@ -2313,7 +2329,7 @@ function openSheet(kind, payload = null) {
       return;
     }
     const user = window.PlaylogOfficialData?.findUserByPlaylogId?.(query);
-    if (!user) {
+    if (!user || (!canSeeTestUsers() && isHiddenFromPublicSearch(user))) {
       renderFriendSearchResult(`<p class="search-message">해당 Playlog ID의 사용자를 찾을 수 없습니다.</p>`);
       return;
     }
@@ -3427,7 +3443,7 @@ function renderFriends() {
   }
   const list = friendUsers();
   const pendingUsers = appUser(currentUserId)?.role === "admin"
-    ? (window.PlaylogOfficialData?.users || []).filter((user) => user.status === "pending")
+    ? (window.PlaylogOfficialData?.users || []).filter((user) => user.status === "pending" && !isHiddenFromPublicSearch(user))
     : [];
   const me = appUser(currentUserId);
   const myStats = currentHomeStats();
