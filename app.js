@@ -415,13 +415,29 @@ async function syncMatchCompletionAndPublish(evaluation) {
   if (!completion.allComplete) return { published: false, generatedCards: [] };
 
   const publishedAt = timestamp;
-  await publishMatchAsync(evaluation.matchId, publishedAt);
-  const refreshedMatches = await refreshMatchesAsync(currentUserId);
-  const publishedMatch = (refreshedMatches || []).find((item) => item.id === evaluation.matchId)
-    || (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId);
-  if (publishedMatch?.status !== "published") {
-    throw new Error("경기 공개 상태 동기화에 실패했습니다.");
+  const publishedRow = await publishMatchAsync(evaluation.matchId, publishedAt);
+  if (publishedRow?.status !== "published") {
+    throw new Error(`경기 공개 상태 업데이트에 실패했습니다: ${evaluation.matchId}`);
   }
+  const localMatch = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId);
+  if (localMatch) {
+    localMatch.status = publishedRow.status;
+    localMatch.publishedAt = publishedRow.publishedAt || publishedAt;
+    localMatch.participants = completion.participants || localMatch.participants;
+  }
+  let refreshedMatches = [];
+  try {
+    refreshedMatches = await refreshMatchesAsync(currentUserId);
+  } catch (error) {
+    console.error("Supabase 경기 공개 후 matches 동기화 실패", error);
+  }
+  const publishedMatch = (refreshedMatches || []).find((item) => item.id === evaluation.matchId)
+    || (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId)
+    || {
+      ...publishedRow,
+      participants: completion.participants || [],
+    };
+  if (publishedMatch.status !== "published") publishedMatch.status = "published";
   const generatedCards = [];
   for (const participant of publishedMatch.participants || completion.participants || []) {
     if (participant.evaluationCompleted !== true) continue;
