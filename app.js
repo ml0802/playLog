@@ -290,13 +290,7 @@ function displayUserName(userId) {
 }
 
 function displayUserLabel(userId, scopeUserIds = null) {
-  const baseName = displayUserName(userId);
-  const ids = scopeUserIds || (window.PlaylogOfficialData?.users || []).map((user) => user.id);
-  const duplicateCount = ids.filter((id) => displayUserName(id) === baseName).length;
-  if (duplicateCount <= 1) return baseName;
-  const user = appUser(userId);
-  const suffix = user?.playlogId || String(userId || "").replace(/^user:/, "");
-  return `${baseName} (@${suffix})`;
+  return displayUserName(userId);
 }
 
 function saveLoginSession(userId) {
