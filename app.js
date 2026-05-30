@@ -338,6 +338,54 @@ async function saveEvaluationAsync(payload) {
   return requireSupabaseBridge().saveEvaluation(payload);
 }
 
+async function upsertGeneratedCardsAsync(payload) {
+  return requireSupabaseBridge().upsertGeneratedCards(payload);
+}
+
+function withUpsertedCard(cards, card) {
+  const nextCards = (cards || []).filter((item) => item && item.id !== card.id);
+  nextCards.push(card);
+  return nextCards;
+}
+
+function buildGeneratedCardBundle(evaluation) {
+  const matchCard = window.PlaylogOfficialData?.generateCardFor?.(
+    evaluation.matchId,
+    evaluation.targetUserId,
+    evaluation.updatedAt || evaluation.createdAt || new Date().toISOString(),
+  );
+  if (!matchCard) return null;
+
+  const nextMatchCards = withUpsertedCard(window.PlaylogOfficialData?.playerMatchCards || [], matchCard);
+  const previousStats = (window.PlaylogOfficialData?.playerCurrentStats || [])
+    .find((stats) => stats && stats.userId === evaluation.targetUserId) || null;
+  const currentStats = window.PlaylogEngine?.generatePlayerCurrentStats?.({
+    userId: evaluation.targetUserId,
+    cards: nextMatchCards,
+    previousStats,
+    generatedAt: matchCard.generatedAt,
+  }) || null;
+  const monthKey = matchCard.generatedAt.slice(0, 7);
+  const previousMonthlyCard = (window.PlaylogOfficialData?.playerMonthlyCards || [])
+    .filter((card) => card && card.userId === evaluation.targetUserId && card.monthKey < monthKey)
+    .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
+  const monthlyCard = window.PlaylogEngine?.generatePlayerMonthlyCard?.({
+    userId: evaluation.targetUserId,
+    monthKey,
+    cards: nextMatchCards,
+    previousMonthlyCard,
+    generatedAt: matchCard.generatedAt,
+  }) || null;
+
+  return { matchCard, currentStats, monthlyCard };
+}
+
+async function saveGeneratedCardsForEvaluation(evaluation) {
+  const bundle = buildGeneratedCardBundle(evaluation);
+  if (!bundle) return null;
+  return upsertGeneratedCardsAsync(bundle);
+}
+
 function disableLocalEvaluationFallback() {
   if (!window.PlaylogOfficialData) return;
   window.PlaylogOfficialData.saveEvaluation = async (payload) => saveEvaluationAsync(payload);
@@ -2901,13 +2949,15 @@ function renderEvaluation() {
     }
     if (currentStep === 5) {
       const evaluation = buildEvaluation(`evaluation:ui:${Date.now()}`);
+      let savedEvaluation = null;
       try {
-        await saveEvaluationAsync(evaluation);
+        savedEvaluation = await saveEvaluationAsync(evaluation);
+        const savedCards = await saveGeneratedCardsForEvaluation(savedEvaluation);
+        lastGeneratedCard = savedCards?.matchCard || null;
       } catch (error) {
-        reportSupabaseError(error, "Supabase 평가 저장 실패");
+        reportSupabaseError(error, "Supabase 평가/카드 저장 실패");
         return;
       }
-      lastGeneratedCard = null;
       showToast("평가가 자동 저장되었습니다");
       currentStep = activeMatchRecord() ? 6 : 7;
     } else {

@@ -13,6 +13,9 @@ function officialData() {
   window.PlaylogOfficialData.friends = window.PlaylogOfficialData.friends || [];
   window.PlaylogOfficialData.matches = window.PlaylogOfficialData.matches || [];
   window.PlaylogOfficialData.evaluations = window.PlaylogOfficialData.evaluations || [];
+  window.PlaylogOfficialData.playerMatchCards = window.PlaylogOfficialData.playerMatchCards || [];
+  window.PlaylogOfficialData.playerCurrentStats = window.PlaylogOfficialData.playerCurrentStats || [];
+  window.PlaylogOfficialData.playerMonthlyCards = window.PlaylogOfficialData.playerMonthlyCards || [];
   return window.PlaylogOfficialData;
 }
 
@@ -233,6 +236,139 @@ function toEvaluationHighlightRows(evaluation) {
   }));
 }
 
+function fromPlayerMatchCardRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    matchId: row.match_id,
+    userId: row.user_id,
+    overallRating: row.overall_rating,
+    previousOverallRating: row.previous_overall_rating,
+    overallChange: row.overall_change,
+    commonAverage: Number(row.common_average),
+    positionAverage: Number(row.position_average),
+    matchScore: Number(row.match_score),
+    mainEvaluatedPosition: row.main_evaluated_position,
+    selectedPositionSummary: row.selected_position_summary || {},
+    playStyle: row.play_style,
+    playStyleCode: row.play_style_code,
+    radarData: row.radar_data || {},
+    radarChange: row.radar_change || {},
+    positionAdaptation: row.position_adaptation || {},
+    strengthsTop3: row.strengths_top3 || [],
+    weaknessesTop3: row.weaknesses_top3 || [],
+    matchAnalysisText: row.match_analysis_text || "",
+    analysisScores: row.analysis_scores || [],
+    analysisChanges: row.analysis_changes || [],
+    reliabilityLevel: row.reliability_level,
+    evaluatorCount: row.evaluator_count,
+    generatedAt: row.generated_at,
+  };
+}
+
+function toPlayerMatchCardRow(card) {
+  return {
+    id: card.id,
+    match_id: card.matchId,
+    user_id: card.userId,
+    overall_rating: card.overallRating,
+    previous_overall_rating: card.previousOverallRating,
+    overall_change: card.overallChange,
+    common_average: card.commonAverage,
+    position_average: card.positionAverage,
+    match_score: card.matchScore,
+    main_evaluated_position: card.mainEvaluatedPosition,
+    selected_position_summary: card.selectedPositionSummary || {},
+    play_style: card.playStyle,
+    play_style_code: card.playStyleCode,
+    radar_data: card.radarData || {},
+    radar_change: card.radarChange || {},
+    position_adaptation: card.positionAdaptation || {},
+    strengths_top3: card.strengthsTop3 || [],
+    weaknesses_top3: card.weaknessesTop3 || [],
+    match_analysis_text: card.matchAnalysisText || "",
+    analysis_scores: card.analysisScores || [],
+    analysis_changes: card.analysisChanges || [],
+    reliability_level: card.reliabilityLevel,
+    evaluator_count: card.evaluatorCount,
+    generated_at: card.generatedAt,
+  };
+}
+
+function fromPlayerCurrentStatsRow(row) {
+  if (!row) return null;
+  return {
+    userId: row.user_id,
+    currentOVR: row.current_ovr,
+    previousOVR: row.previous_ovr,
+    ovrChange: row.ovr_change,
+    radarData: row.radar_data || {},
+    radarChange: row.radar_change || {},
+    currentPlayStyle: row.current_play_style,
+    previousPlayStyle: row.previous_play_style,
+    currentMainPosition: row.current_main_position,
+    positionAdaptation: row.position_adaptation || {},
+    reliabilityLevel: row.reliability_level,
+    recentMatchCount: row.recent_match_count,
+    generatedAt: row.generated_at,
+  };
+}
+
+function toPlayerCurrentStatsRow(stats) {
+  return {
+    user_id: stats.userId,
+    current_ovr: stats.currentOVR,
+    previous_ovr: stats.previousOVR,
+    ovr_change: stats.ovrChange,
+    radar_data: stats.radarData || {},
+    radar_change: stats.radarChange || {},
+    current_play_style: stats.currentPlayStyle,
+    previous_play_style: stats.previousPlayStyle,
+    current_main_position: stats.currentMainPosition,
+    position_adaptation: stats.positionAdaptation || {},
+    reliability_level: stats.reliabilityLevel,
+    recent_match_count: stats.recentMatchCount,
+    generated_at: stats.generatedAt,
+  };
+}
+
+function fromPlayerMonthlyCardRow(row) {
+  if (!row) return null;
+  return {
+    userId: row.user_id,
+    monthKey: row.month_key,
+    monthlyOVR: row.monthly_ovr,
+    previousMonthlyOVR: row.previous_monthly_ovr,
+    monthlyOVRChange: row.monthly_ovr_change,
+    radarData: row.radar_data || {},
+    mainPlayStyle: row.main_play_style,
+    mainPosition: row.main_position,
+    positionAdaptation: row.position_adaptation || {},
+    matchCount: row.match_count,
+    strengthsSummary: row.strengths_summary || [],
+    weaknessesSummary: row.weaknesses_summary || [],
+    generatedAt: row.generated_at,
+  };
+}
+
+function toPlayerMonthlyCardRow(card) {
+  return {
+    user_id: card.userId,
+    month_key: card.monthKey,
+    monthly_ovr: card.monthlyOVR,
+    previous_monthly_ovr: card.previousMonthlyOVR,
+    monthly_ovr_change: card.monthlyOVRChange,
+    radar_data: card.radarData || {},
+    main_play_style: card.mainPlayStyle,
+    main_position: card.mainPosition,
+    position_adaptation: card.positionAdaptation || {},
+    match_count: card.matchCount,
+    strengths_summary: card.strengthsSummary || [],
+    weaknesses_summary: card.weaknessesSummary || [],
+    generated_at: card.generatedAt,
+  };
+}
+
 function mergeUsers(users = []) {
   const data = officialData();
   users.filter(Boolean).forEach((user) => {
@@ -305,6 +441,52 @@ function mergeEvaluations(evaluations = []) {
     const index = data.evaluations.findIndex((item) => item.id === evaluation.id);
     if (index >= 0) data.evaluations[index] = { ...data.evaluations[index], ...evaluation };
     else data.evaluations.push(evaluation);
+  });
+}
+
+function replaceCardsForUsers(userIds = [], { matchCards = [], currentStats = [], monthlyCards = [] } = {}) {
+  const data = officialData();
+  const userIdSet = new Set(userIds);
+  const pruneByUser = (collection) => {
+    if (!Array.isArray(collection)) return;
+    for (let index = collection.length - 1; index >= 0; index -= 1) {
+      if (userIdSet.has(collection[index]?.userId)) collection.splice(index, 1);
+    }
+  };
+  pruneByUser(data.playerMatchCards);
+  pruneByUser(data.playerCurrentStats);
+  pruneByUser(data.playerMonthlyCards);
+  matchCards.filter(Boolean).forEach((card) => data.playerMatchCards.push(card));
+  currentStats.filter(Boolean).forEach((stats) => data.playerCurrentStats.push(stats));
+  monthlyCards.filter(Boolean).forEach((card) => data.playerMonthlyCards.push(card));
+}
+
+function mergePlayerMatchCards(cards = []) {
+  const data = officialData();
+  cards.filter(Boolean).forEach((card) => {
+    const index = data.playerMatchCards.findIndex((item) => item.id === card.id);
+    if (index >= 0) data.playerMatchCards[index] = { ...data.playerMatchCards[index], ...card };
+    else data.playerMatchCards.push(card);
+  });
+}
+
+function mergePlayerCurrentStats(statsItems = []) {
+  const data = officialData();
+  statsItems.filter(Boolean).forEach((stats) => {
+    const index = data.playerCurrentStats.findIndex((item) => item.userId === stats.userId);
+    if (index >= 0) data.playerCurrentStats[index] = { ...data.playerCurrentStats[index], ...stats };
+    else data.playerCurrentStats.push(stats);
+  });
+}
+
+function mergePlayerMonthlyCards(cards = []) {
+  const data = officialData();
+  cards.filter(Boolean).forEach((card) => {
+    const index = data.playerMonthlyCards.findIndex((item) =>
+      item.userId === card.userId && item.monthKey === card.monthKey,
+    );
+    if (index >= 0) data.playerMonthlyCards[index] = { ...data.playerMonthlyCards[index], ...card };
+    else data.playerMonthlyCards.push(card);
   });
 }
 
@@ -555,12 +737,100 @@ async function saveEvaluation(evaluation) {
   return saved;
 }
 
+async function refreshPlayerCards(userId) {
+  assertClient();
+  const { data: participantRows, error: participantsError } = await supabase
+    .from("match_participants")
+    .select("match_id")
+    .eq("user_id", userId);
+  if (participantsError) throw participantsError;
+  const matchIds = [...new Set((participantRows || []).map((participant) => participant.match_id).filter(Boolean))];
+
+  const { data: ownMatchCardRows, error: ownMatchCardsError } = await supabase
+    .from("player_match_cards")
+    .select("*")
+    .eq("user_id", userId);
+  if (ownMatchCardsError) throw ownMatchCardsError;
+  let matchCardRows = ownMatchCardRows || [];
+  if (matchIds.length) {
+    const { data: participantMatchCardRows, error: participantMatchCardsError } = await supabase
+      .from("player_match_cards")
+      .select("*")
+      .in("match_id", matchIds);
+    if (participantMatchCardsError) throw participantMatchCardsError;
+    const rowsById = new Map(matchCardRows.map((row) => [row.id, row]));
+    (participantMatchCardRows || []).forEach((row) => rowsById.set(row.id, row));
+    matchCardRows = [...rowsById.values()];
+  }
+
+  const cardUserIds = [...new Set([userId, ...matchCardRows.map((row) => row.user_id)].filter(Boolean))];
+  const { data: currentStatsRows, error: currentStatsError } = await supabase
+    .from("player_current_stats")
+    .select("*")
+    .in("user_id", cardUserIds);
+  if (currentStatsError) throw currentStatsError;
+  const { data: monthlyCardRows, error: monthlyCardsError } = await supabase
+    .from("player_monthly_cards")
+    .select("*")
+    .in("user_id", cardUserIds);
+  if (monthlyCardsError) throw monthlyCardsError;
+
+  const matchCards = matchCardRows.map(fromPlayerMatchCardRow);
+  const currentStats = (currentStatsRows || []).map(fromPlayerCurrentStatsRow);
+  const monthlyCards = (monthlyCardRows || []).map(fromPlayerMonthlyCardRow);
+  replaceCardsForUsers(cardUserIds, { matchCards, currentStats, monthlyCards });
+  return { matchCards, currentStats, monthlyCards };
+}
+
+async function upsertGeneratedCards({ matchCard = null, currentStats = null, monthlyCard = null }) {
+  assertClient();
+  let savedMatchCard = null;
+  let savedCurrentStats = null;
+  let savedMonthlyCard = null;
+
+  if (matchCard) {
+    const { data, error } = await supabase
+      .from("player_match_cards")
+      .upsert(toPlayerMatchCardRow(matchCard), { onConflict: "id" })
+      .select("*")
+      .single();
+    if (error) throw error;
+    savedMatchCard = fromPlayerMatchCardRow(data);
+  }
+
+  if (currentStats) {
+    const { data, error } = await supabase
+      .from("player_current_stats")
+      .upsert(toPlayerCurrentStatsRow(currentStats), { onConflict: "user_id" })
+      .select("*")
+      .single();
+    if (error) throw error;
+    savedCurrentStats = fromPlayerCurrentStatsRow(data);
+  }
+
+  if (monthlyCard) {
+    const { data, error } = await supabase
+      .from("player_monthly_cards")
+      .upsert(toPlayerMonthlyCardRow(monthlyCard), { onConflict: "user_id,month_key" })
+      .select("*")
+      .single();
+    if (error) throw error;
+    savedMonthlyCard = fromPlayerMonthlyCardRow(data);
+  }
+
+  mergePlayerMatchCards([savedMatchCard]);
+  mergePlayerCurrentStats([savedCurrentStats]);
+  mergePlayerMonthlyCards([savedMonthlyCard]);
+  return { matchCard: savedMatchCard, currentStats: savedCurrentStats, monthlyCard: savedMonthlyCard };
+}
+
 async function bootstrapUserData(userId) {
   assertClient();
   await refreshUsers();
   await refreshFriends(userId);
   await refreshMatches(userId);
   await refreshEvaluations(userId);
+  await refreshPlayerCards(userId);
 }
 
 window.PlaylogSupabase = {
@@ -576,5 +846,7 @@ window.PlaylogSupabase = {
   createMatch,
   refreshEvaluations,
   saveEvaluation,
+  refreshPlayerCards,
+  upsertGeneratedCards,
   bootstrapUserData,
 };
