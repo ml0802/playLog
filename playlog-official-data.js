@@ -373,16 +373,12 @@
   }
 
   function addFriend({ userId: ownerUserId, friendUserId, createdAt = new Date().toISOString() }) {
-    const existing = friends.find((friend) =>
-      friend.userId === ownerUserId && friend.friendUserId === friendUserId,
-    );
-    if (existing) {
-      existing.status = "accepted";
-      return existing;
-    }
-    const friend = { userId: ownerUserId, friendUserId, status: "accepted", createdAt };
-    friends.push(friend);
-    return friend;
+    console.error("PlaylogOfficialData.addFriend local fallback is disabled. Use PlaylogSupabase.addFriend().", {
+      userId: ownerUserId,
+      friendUserId,
+      createdAt,
+    });
+    throw new Error("친구 추가는 Supabase public.friends insert로만 처리됩니다.");
   }
 
   function saveUserApplication({

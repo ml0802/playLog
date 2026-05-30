@@ -317,7 +317,12 @@ async function saveUserApplicationAsync(payload) {
 }
 
 async function addFriendAsync(payload) {
-  return window.PlaylogOfficialData?.addFriend?.(payload) || null;
+  return requireSupabaseBridge().addFriend(payload);
+}
+
+function disableLocalFriendFallback() {
+  if (!window.PlaylogOfficialData) return;
+  window.PlaylogOfficialData.addFriend = async (payload) => addFriendAsync(payload);
 }
 
 async function updateUserStatusAsync(userId, status, approvedAt = null) {
@@ -2417,11 +2422,16 @@ function openSheet(kind, payload = null) {
     `);
     sheet.querySelector("[data-confirm-add-friend]")?.addEventListener("click", async (event) => {
       const friendUserId = event.currentTarget.dataset.confirmAddFriend;
-      await addFriendAsync({
-        userId: currentUserId,
-        friendUserId,
-        createdAt: new Date().toISOString(),
-      });
+      try {
+        await addFriendAsync({
+          userId: currentUserId,
+          friendUserId,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        reportSupabaseError(error, "Supabase 친구 추가 실패");
+        return;
+      }
       renderFriends();
       closeSheet();
       showToast("친구 목록에 추가되었습니다.");
@@ -2429,11 +2439,16 @@ function openSheet(kind, payload = null) {
   });
   sheet.querySelectorAll("[data-add-friend]").forEach((button) => button.addEventListener("click", async () => {
     const friendUserId = button.dataset.addFriend;
-    await addFriendAsync({
-      userId: currentUserId,
-      friendUserId,
-      createdAt: new Date().toISOString(),
-    });
+    try {
+      await addFriendAsync({
+        userId: currentUserId,
+        friendUserId,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      reportSupabaseError(error, "Supabase 친구 추가 실패");
+      return;
+    }
     renderFriends();
     closeSheet();
     showToast("친구 목록에 추가되었습니다.");
@@ -3709,6 +3724,7 @@ window.PlaylogApp = {
   setView,
 };
 
+disableLocalFriendFallback();
 bindInteractions();
 if (isCurrentUserApproved()) {
   renderHome();

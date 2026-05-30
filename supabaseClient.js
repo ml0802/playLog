@@ -10,6 +10,7 @@ const supabase = supabaseUrl && supabaseAnonKey
 function officialData() {
   window.PlaylogOfficialData = window.PlaylogOfficialData || {};
   window.PlaylogOfficialData.users = window.PlaylogOfficialData.users || [];
+  window.PlaylogOfficialData.friends = window.PlaylogOfficialData.friends || [];
   return window.PlaylogOfficialData;
 }
 
@@ -54,12 +55,51 @@ function toUserRow(user) {
   };
 }
 
+function fromFriendRow(row) {
+  if (!row) return null;
+  return {
+    userId: row.user_id,
+    friendUserId: row.friend_user_id,
+    status: row.status || "accepted",
+    createdAt: row.created_at,
+  };
+}
+
+function toFriendRow(friend) {
+  return {
+    user_id: friend.userId,
+    friend_user_id: friend.friendUserId,
+    status: friend.status || "accepted",
+    created_at: friend.createdAt || new Date().toISOString(),
+  };
+}
+
 function mergeUsers(users = []) {
   const data = officialData();
   users.filter(Boolean).forEach((user) => {
     const index = data.users.findIndex((item) => item.id === user.id);
     if (index >= 0) data.users[index] = { ...data.users[index], ...user };
     else data.users.push(user);
+  });
+}
+
+function replaceFriendsForUser(userId, friends = []) {
+  const data = officialData();
+  for (let index = data.friends.length - 1; index >= 0; index -= 1) {
+    const friend = data.friends[index];
+    if (friend.userId === userId || friend.friendUserId === userId) data.friends.splice(index, 1);
+  }
+  friends.filter(Boolean).forEach((friend) => data.friends.push(friend));
+}
+
+function mergeFriends(friends = []) {
+  const data = officialData();
+  friends.filter(Boolean).forEach((friend) => {
+    const index = data.friends.findIndex((item) =>
+      item.userId === friend.userId && item.friendUserId === friend.friendUserId,
+    );
+    if (index >= 0) data.friends[index] = { ...data.friends[index], ...friend };
+    else data.friends.push(friend);
   });
 }
 
@@ -123,9 +163,36 @@ async function updateUserStatus(userId, status, approvedAt = null) {
   return saved;
 }
 
+async function refreshFriends(userId) {
+  assertClient();
+  const { data, error } = await supabase
+    .from("friends")
+    .select("*")
+    .or(`user_id.eq.${userId},friend_user_id.eq.${userId}`)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  const friends = (data || []).map(fromFriendRow);
+  replaceFriendsForUser(userId, friends);
+  return friends;
+}
+
+async function addFriend(friend) {
+  assertClient();
+  const { data, error } = await supabase
+    .from("friends")
+    .insert(toFriendRow(friend))
+    .select("*")
+    .single();
+  if (error) throw error;
+  const saved = fromFriendRow(data);
+  mergeFriends([saved]);
+  return saved;
+}
+
 async function bootstrapUserData(userId) {
   assertClient();
   await refreshUsers();
+  await refreshFriends(userId);
 }
 
 window.PlaylogSupabase = {
@@ -135,5 +202,7 @@ window.PlaylogSupabase = {
   findUserByPlaylogId,
   saveUserApplication,
   updateUserStatus,
+  refreshFriends,
+  addFriend,
   bootstrapUserData,
 };
