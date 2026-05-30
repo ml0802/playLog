@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PLAYLOG MVP</title>
+    <script type="module" crossorigin src="/assets/index-BKB-lefL.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Bq0fZDvA.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div class="topline">
+          <div>
+            <p class="eyebrow">PLAYLOG</p>
+            <h1 id="homeGreeting">안녕하세요!</h1>
+            <p>오늘도 멋진 플레이 기대할게요.</p>
+          </div>
+          <button class="icon-button" data-toast="새 알림은 아직 없어요" type="button" aria-label="알림">⌁</button>
+        </div>
+
+        <article class="player-card" id="homePlayerCard" role="button" tabindex="0" aria-labelledby="profile-title">
+          <div class="card-intro">
+            <button class="avatar-card" id="avatarPicker" type="button" aria-label="프로필 프리셋 선택">
+              <span class="profile-art" id="profileAvatar" role="img" aria-label="승현의 게임형 프로필 아바타"></span>
+              <span class="badge" id="homePositionBadge">FR</span>
+              <span class="edit-avatar">변경</span>
+            </button>
+            <div class="profile-copy">
+              <p class="card-kicker" id="homeCardKicker">CURRENT FORM</p>
+              <h2 id="profile-title">승현</h2>
+              <div class="role-row"><small>포지션</small><strong id="homePosition">프리롤 · FR</strong></div>
+              <div class="play-identity" id="playIdentity">
+                <small>대표 플레이유형</small>
+                <strong id="homePlayType">연결형 플레이메이커</strong>
+                <span id="homePlayTypeSub">Link Playmaker</span>
+                <div class="support-tags" id="homeSupportTags"></div>
+              </div>
+              <div class="ovr-line">
+                <span>OVR</span>
+                <strong id="homeOvr">78</strong>
+                <em class="rise">▲ 3</em>
+              </div>
+            </div>
+          </div>
+          <div class="ability-head">
+            <strong>핵심 능력 분석</strong>
+            <span id="homeFormBasis">최근 4경기 기준</span>
+          </div>
+          <div class="home-radar" id="homeRadar" aria-label="활동성, 게임 센스, 패스, 볼 컨트롤, 움직임, 멘탈 능력 분석"></div>
+          <div class="growth-read">
+            <small>PLAY CHANGE</small>
+            <strong>연결 플레이 비율 증가</strong>
+            <p>압박 상황의 빠른 패스와 프리롤 움직임이 함께 늘었습니다.</p>
+          </div>
+        </article>
+      </header>
+
+      <section class="content-view" data-view="auth">
+        <article class="flow-card auth-card">
+          <p class="eyebrow purple">PLAYLOG 가입</p>
+          <div id="authPane"></div>
+        </article>
+      </section>
+
+      <section class="content-view active" data-view="home">
+        <div class="section-head">
+          <h2>진행 중인 평가</h2>
+          <button id="activeMatchAllButton" data-toast="진행 중인 평가가 없습니다." type="button">전체 보기 ›</button>
+        </div>
+        <article class="match-progress">
+          <div class="match-icon">⚽</div>
+          <div>
+            <span class="live-pill" id="activeMatchStatus">수집 중</span>
+            <h3 id="activeMatchTitle">상암 목요일 풋살</h3>
+            <p id="activeMatchMeta">2026.05.23 (토) 21:00 · 상암 풋살장</p>
+            <p id="activeMatchWaiting" hidden></p>
+            <div class="faces" id="activeMatchFaces" aria-label="참가자 6명 중 4명 완료">
+              <span>민</span><span>지</span><span>현</span><span>우</span><i></i><i></i>
+            </div>
+          </div>
+          <div class="progress-ring" id="activeMatchProgress" style="--progress: 66">
+            <strong id="activeMatchProgressValue">4/6</strong>
+            <small id="activeMatchProgressLabel">완료</small>
+          </div>
+          <button class="primary full" id="activeMatchAction" data-go="evaluate" type="button">이어서 평가하기 ›</button>
+        </article>
+
+        <div class="section-head">
+          <h2>최근 경기</h2>
+          <button data-toast="최근 경기 상세는 준비 중입니다" type="button">전체 보기 ›</button>
+        </div>
+        <div class="recent-list" id="recentMatches"></div>
+
+        <h2 class="section-title">이번 달 요약</h2>
+        <article class="coach-report">
+          <div class="report-title">
+            <span id="homeMonthlyKicker">COACH REPORT</span>
+            <strong id="homeMonthlyTitle">안정적인 연결 역할로 성장 중</strong>
+          </div>
+          <div class="season-card-meta" id="homeMonthlyMeta" hidden></div>
+          <div class="monthly-radar" id="homeMonthlyRadar" hidden></div>
+          <p id="homeMonthlyDescription">최근엔 짧게 연결하는 플레이가 많아졌어요.</p>
+          <p id="homeMonthlyPositionText">압박 상황에서도 패스를 선택하는 빈도가 늘었습니다.</p>
+          <p id="homeMonthlyStrengthText">무리한 돌파보다 안정적인 연결 플레이 비율이 증가했습니다.</p>
+          <div class="report-tags" id="homeMonthlyStrengths">
+            <span>패스 선택 증가</span><span>침착성 상승</span><span>프리롤 움직임</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="content-view" data-view="evaluate">
+        <div class="flow-card">
+          <p class="eyebrow purple">경기 평가</p>
+          <div class="eval-target">
+            <span>현재 평가 대상</span>
+            <strong id="currentTarget">김민수</strong>
+          </div>
+          <h2 id="stepTitle">선수 선택</h2>
+          <p id="stepHelp">본인을 제외한 동료 5명을 평가합니다.</p>
+          <div class="stepper" id="stepper"></div>
+          <div id="evaluationPane"></div>
+        </div>
+      </section>
+
+      <section class="content-view" data-view="newMatch">
+        <article class="flow-card new-match-card">
+          <p class="eyebrow purple">새 경기 추가</p>
+          <h2>경기 만들기</h2>
+          <p>참가자를 선택하면 평가탭 리스트에 바로 추가됩니다.</p>
+          <div id="newMatchPane"></div>
+        </article>
+      </section>
+
+      <section class="content-view" data-view="cards">
+        <div class="section-head">
+          <h2>카드</h2>
+        </div>
+        <div class="card-segments" aria-label="카드 종류">
+          <button class="active" data-card-tab="match" type="button">경기 카드</button>
+          <button data-card-tab="monthly" type="button">월 카드</button>
+        </div>
+        <div class="card-list" id="cardList"></div>
+      </section>
+
+      <section class="content-view" data-view="reflection">
+        <article class="flow-card reflection-card">
+          <p class="eyebrow purple">개인 회고 카드</p>
+          <h2>내가 생각한 나</h2>
+          <p>공식 선수카드와 분리된 자가 기록입니다.</p>
+          <p id="reflectionContext">빠른 회고 · 경기 연결 없음</p>
+          <h2 id="reflectionStepTitle">포지션 선택</h2>
+          <p id="reflectionStepHelp">오늘 내가 수행한 역할을 선택해주세요.</p>
+          <div class="stepper" id="reflectionStepper"></div>
+          <div id="reflectionPane"></div>
+          <div class="reflection-history" id="reflectionHistory"></div>
+        </article>
+      </section>
+
+      <section class="content-view match-result-view" data-view="matchResult">
+        <div id="matchResultPane"></div>
+      </section>
+
+      <section class="content-view" data-view="friends">
+        <div class="section-head">
+          <h2>친구</h2>
+          <button id="friendRequestOpen" type="button">친구 추가</button>
+        </div>
+        <div class="friend-highlight">
+          <span>같이 성장 중</span>
+          <strong>김민수 OVR +3 · 패스 센스 상승</strong>
+          <p>나와 다른 점: 민수는 창의형, 승현님은 안정 연결형에 가까워요.</p>
+        </div>
+        <div class="friend-list" id="friendList"></div>
+      </section>
+
+      <button class="fab" id="fab" type="button" aria-label="빠른 작업">＋</button>
+      <nav class="tabbar" aria-label="주요 메뉴">
+        <button class="active" data-go="home" type="button">⌂<span>홈</span></button>
+        <button data-go="evaluate" type="button">□<span>평가</span></button>
+        <button data-go="cards" type="button">▤<span>카드</span></button>
+        <button data-go="reflection" type="button">↗<span>회고</span></button>
+        <button data-go="friends" type="button">♡<span>친구</span></button>
+      </nav>
+    </main>
+
+    <div class="overlay" id="overlay" hidden>
+      <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+    </div>
+    <div class="toast" id="toast" aria-live="polite"></div>
+  </body>
+</html>
