@@ -733,6 +733,7 @@ async function recalculateMatchEvaluationCompletion(matchId) {
 
 async function publishMatch(matchId, publishedAt = new Date().toISOString()) {
   assertClient();
+  console.info("[PlaylogSupabase] publishMatch", { matchId, publishedAt });
   const { data, error } = await supabase
     .from("matches")
     .update({ status: "published", published_at: publishedAt })
@@ -743,7 +744,21 @@ async function publishMatch(matchId, publishedAt = new Date().toISOString()) {
     throw error;
   }
 
-  const row = firstReturnedRow(data, "publishMatch");
+  let row = Array.isArray(data) ? data[0] : data;
+  if (!row) {
+    console.warn("[PlaylogSupabase] publishMatch update returned no rows; selecting by id", { matchId, publishedAt, data });
+    const { data: selectedRows, error: selectError } = await supabase
+      .from("matches")
+      .select("*")
+      .eq("id", matchId);
+    if (selectError) {
+      reportSupabaseQueryError("publishMatch:selectAfterUpdate", selectError);
+      throw selectError;
+    }
+    console.info("[PlaylogSupabase] publishMatch selectAfterUpdate", { matchId, rows: selectedRows });
+    row = Array.isArray(selectedRows) ? selectedRows[0] : selectedRows;
+  }
+  if (!row) throw new Error(`publishMatch: no match row found for id ${matchId}`);
   const appMatch = officialData().matches.find((match) => match.id === matchId);
   if (appMatch) {
     appMatch.status = row.status || "published";
