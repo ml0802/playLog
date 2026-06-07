@@ -468,7 +468,7 @@ svg text { font-family: inherit; }
 .friend-section-label { margin-top: 4px; color: var(--purple); font-size: 12px; font-weight: 900; letter-spacing: .02em; }
 .friend-card { display: grid; grid-template-columns: 42px 1fr auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 15px; background: #fff; box-shadow: 0 8px 20px rgba(17,19,34,.04); }
 .friend-card i { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 13px; background: #f0eaff; color: var(--purple); font-style: normal; font-weight: 900; }
-.friend-card i[style*="--preset-image"] { background-image: var(--preset-image); background-size: auto 100%; background-position: var(--preset-position) 0; color: transparent; }
+.friend-card i[style*="--preset-image"] { background-image: var(--preset-image); background-repeat: no-repeat; background-size: 552% auto; background-position: var(--preset-position) 19%; color: transparent; }
 .friend-card strong { font-size: 14px; }
 .friend-card small { display: block; margin-top: 4px; color: #8a8ca0; font-size: 11px; line-height: 1.35; }
 .friend-card.suggestion { background: #faf9ff; border-style: dashed; }

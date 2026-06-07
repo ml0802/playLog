@@ -894,6 +894,29 @@ function friendAddActionHtml(userId, label = "친구 추가") {
   return `<button data-add-friend-user="${userId}" type="button"><span>＋</span> ${label}</button>`;
 }
 
+function currentUserFriendRecord(userId) {
+  return (window.PlaylogOfficialData?.friends || []).find((friend) =>
+    friend.userId === currentUserId && friend.friendUserId === userId,
+  ) || null;
+}
+
+function currentUserFriendAddStatus(userId) {
+  if (!userId || userId === currentUserId) return "self";
+  const friend = currentUserFriendRecord(userId);
+  if (!friend) return "none";
+  if (friend.status === "accepted") return "accepted";
+  if (["pending", "requested", "requesting"].includes(friend.status)) return "pending";
+  return friend.status || "pending";
+}
+
+function currentUserFriendAddActionHtml(userId, label = "친구 추가") {
+  const status = currentUserFriendAddStatus(userId);
+  if (status === "accepted") return `<button type="button" disabled>친구</button>`;
+  if (status === "pending") return `<button type="button" disabled>친구 요청 중</button>`;
+  if (status === "self") return `<button type="button" disabled>본인</button>`;
+  return `<button data-add-friend-user="${userId}" type="button"><span>＋</span> ${label}</button>`;
+}
+
 function friendSearchCard(user) {
   const summary = friendProfileSummary(user.id);
   const name = displayUserName(user.id);
@@ -2385,7 +2408,7 @@ function matchResultFriendAddSection(match = activeMatchRecord()) {
                 <strong>${escapeHtml(name)}</strong>
                 <small>${escapeHtml(userSearchCode(userId))}</small>
               </div>
-              ${friendAddActionHtml(userId)}
+              ${currentUserFriendAddActionHtml(userId)}
             </article>
           `;
         }).join("")}
