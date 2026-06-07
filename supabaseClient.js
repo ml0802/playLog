@@ -655,6 +655,27 @@ async function saveUserApplication(user) {
   return saved;
 }
 
+async function updateUserProfile(userId, profile) {
+  assertClient();
+  const patch = {
+    nickname: profile.nickname,
+    main_position: profile.mainPosition || null,
+    preferred_role: profile.preferredRole || null,
+    profile_preset: profile.profilePreset || null,
+    bio: profile.bio || "",
+  };
+  const { data, error } = await supabase
+    .from("users")
+    .update(patch)
+    .eq("id", userId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  const saved = fromUserRow(data);
+  mergeUsers([saved]);
+  return saved;
+}
+
 async function updateUserStatus(userId, status, approvedAt = null) {
   assertClient();
   const patch = {
@@ -1223,6 +1244,7 @@ window.PlaylogSupabase = {
   refreshUsers,
   findUserByPlaylogId,
   saveUserApplication,
+  updateUserProfile,
   updateUserStatus,
   refreshFriends,
   addFriend,

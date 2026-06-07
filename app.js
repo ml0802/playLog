@@ -356,6 +356,10 @@ async function saveUserApplicationAsync(payload) {
   return requireSupabaseBridge().saveUserApplication(payload);
 }
 
+async function updateUserProfileAsync(userId, profile) {
+  return requireSupabaseBridge().updateUserProfile(userId, profile);
+}
+
 async function addFriendAsync(payload) {
   return requireSupabaseBridge().addFriend(payload);
 }
@@ -2724,7 +2728,7 @@ function openSheet(kind, payload = null) {
     const roleSelect = sheet.querySelector("#profileEditRole");
     if (roleSelect) roleSelect.innerHTML = signupRoleOptionsHtml(event.target.value);
   });
-  sheet.querySelector("#saveProfileEdit")?.addEventListener("click", () => {
+  sheet.querySelector("#saveProfileEdit")?.addEventListener("click", async () => {
     const user = appUser(currentUserId);
     if (!user) return;
     const nickname = sheet.querySelector("#profileEditNickname")?.value.trim();
@@ -2739,11 +2743,25 @@ function openSheet(kind, payload = null) {
       showToast("선호 역할을 선택해주세요.");
       return;
     }
-    user.nickname = nickname;
-    user.mainPosition = mainPosition;
-    user.preferredRole = preferredRole;
-    user.profilePreset = profilePreset;
-    selectedAvatar = profilePreset;
+    let saved = null;
+    try {
+      saved = await updateUserProfileAsync(currentUserId, {
+        nickname,
+        mainPosition,
+        preferredRole,
+        profilePreset,
+        bio: user.bio || "",
+      });
+    } catch (error) {
+      reportSupabaseError(error, "Supabase 프로필 저장 실패");
+      return;
+    }
+    user.nickname = saved.nickname;
+    user.mainPosition = saved.mainPosition;
+    user.preferredRole = saved.preferredRole;
+    user.profilePreset = saved.profilePreset;
+    user.bio = saved.bio;
+    selectedAvatar = saved.profilePreset || profilePreset;
     closeSheet();
     showToast("프로필을 저장했습니다.");
     renderHome();
