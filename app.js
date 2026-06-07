@@ -931,7 +931,7 @@ function friendSearchCard(user) {
         <div class="search-card-tags"><span>${escapeHtml(positionLabel)}</span><span>${escapeHtml(roleLabel)}</span></div>
         <small>${escapeHtml(summary.ovr)} · ${escapeHtml(summary.style)}</small>
       </div>
-      ${friendAddActionHtml(user.id)}
+      ${currentUserFriendAddActionHtml(user.id)}
     </article>
   `;
 }
@@ -2594,7 +2594,7 @@ function openSheet(kind, payload = null) {
     friend: `
       <h3>닉네임으로 친구 추가</h3>
       <p>같은 닉네임이 있으면 ID를 확인하고 선택해주세요.</p>
-      <label class="field-label"><span>닉네임</span><input id="friendNicknameSearch" placeholder="예: 미나미" /></label>
+      <label class="field-label"><span>닉네임</span><input id="friendNicknameSearch" placeholder="예: 루키" /></label>
       <button class="primary full" id="searchFriendByNickname" type="button">검색</button>
       <div class="friend-search-result" id="friendSearchResult"></div>
     `,
