@@ -563,12 +563,15 @@
       return summary;
     }, {});
     const highestVoteCount = Math.max(...Object.values(counts));
+    const winnerUserIds = Object.entries(counts)
+      .filter(([, count]) => count === highestVoteCount)
+      .map(([targetUserId]) => targetUserId);
     return {
       type,
-      winnerUserIds: Object.entries(counts)
-        .filter(([, count]) => count === highestVoteCount)
-        .map(([targetUserId]) => targetUserId),
-      voteCount: votes.length,
+      winnerUserIds,
+      voteCount: highestVoteCount,
+      totalVoteCount: votes.length,
+      voteCounts: counts,
     };
   }
 

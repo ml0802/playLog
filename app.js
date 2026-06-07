@@ -2272,12 +2272,17 @@ function matchResultTemplate() {
   const votes = window.PlaylogOfficialData?.matchAwardVotes || [];
   const awardsEnabled = isAwardVotingEnabled(match);
   const awardBlock = (title, result, type) => {
+    const winnerIds = result?.winnerUserIds || [];
     const reasons = votes
-      .filter((vote) => vote.matchId === selectedMatchId && vote.type === type && vote.reason)
+      .filter((vote) =>
+        vote.matchId === selectedMatchId
+        && vote.type === type
+        && winnerIds.includes(vote.targetUserId)
+        && vote.reason)
       .map((vote) => `<li>${escapeHtml(vote.reason)}</li>`)
       .join("");
-    const winners = result?.winnerUserIds?.length
-      ? result.winnerUserIds.map(displayUserName).join(" · ")
+    const winners = winnerIds.length
+      ? winnerIds.map(displayUserName).join(" · ")
       : "공개 후 집계";
     return `<section class="result-section"><div class="result-section-head">${title}<span>${result?.voteCount || 0}표</span></div><p>${winners}</p>${reasons ? `<ul class="result-reasons">${reasons}</ul>` : ""}</section>`;
   };
@@ -2343,7 +2348,10 @@ function awardSummaryCard(title, result, type) {
     : "";
   const winnerOvr = winnerCards.length ? winnerCards.map((card) => `OVR ${card.overallRating}`).join(" · ") : "";
   const reasons = votes
-    .filter((vote) => vote.matchId === selectedMatchId && vote.type === type)
+    .filter((vote) =>
+      vote.matchId === selectedMatchId
+      && vote.type === type
+      && winnerIds.includes(vote.targetUserId))
     .map((vote) => sanitizeOptionalText(vote.reason, [pomReasonPlaceholder, nextStarReasonPlaceholder]))
     .filter(Boolean);
   return `
