@@ -470,34 +470,33 @@ async function saveGeneratedCardsForParticipant(matchId, userId, generatedAt) {
   return saved;
 }
 
-async function syncMatchCompletionAndPublish(evaluation) {
-  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId);
-  if (!match) return { published: false, generatedCards: [] };
+function isEvaluationDeadlineReached(match, now = new Date().toISOString()) {
+  if (!match?.evaluationDeadlineAt) return false;
+  const deadlineTime = new Date(match.evaluationDeadlineAt).getTime();
+  const currentTime = new Date(now).getTime();
+  return Number.isFinite(deadlineTime) && Number.isFinite(currentTime) && currentTime >= deadlineTime;
+}
 
-  const completion = await recalculateMatchEvaluationCompletionAsync(evaluation.matchId);
-  const timestamp = evaluation.updatedAt || evaluation.createdAt || new Date().toISOString();
-  if (!completion.allComplete) return { published: false, generatedCards: [] };
-
-  const publishedAt = timestamp;
-  const publishedRow = await publishMatchAsync(evaluation.matchId, publishedAt);
-  console.info("Supabase 경기 공개 반환 row", { matchId: evaluation.matchId, publishedRow });
+async function publishCompletedParticipants(matchId, completion, publishedAt) {
+  const publishedRow = await publishMatchAsync(matchId, publishedAt);
+  console.info("Supabase 경기 공개 반환 row", { matchId, publishedRow });
   let refreshedMatches = [];
   try {
     refreshedMatches = await refreshMatchesAsync(currentUserId);
   } catch (error) {
     console.error("Supabase 경기 공개 후 matches 동기화 실패", error);
   }
-  const publishedMatch = (refreshedMatches || []).find((item) => item.id === evaluation.matchId)
-    || (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId)
+  const publishedMatch = (refreshedMatches || []).find((item) => item.id === matchId)
+    || (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId)
     || publishedRow;
   if (publishedMatch?.status !== "published") {
-    throw new Error(`경기 공개 상태 동기화에 실패했습니다: ${evaluation.matchId}`);
+    throw new Error(`경기 공개 상태 동기화에 실패했습니다: ${matchId}`);
   }
   const generatedCards = [];
   const cardParticipants = (completion.participants?.length ? completion.participants : publishedMatch.participants || [])
     .filter((participant) => participant.evaluationCompleted === true);
   console.info("Supabase 공개 후 카드 생성 대상", {
-    matchId: evaluation.matchId,
+    matchId,
     participants: cardParticipants,
     publishedParticipants: publishedMatch.participants,
     completionParticipants: completion.participants,
@@ -505,21 +504,42 @@ async function syncMatchCompletionAndPublish(evaluation) {
   for (const participant of cardParticipants) {
     let savedCards = null;
     try {
-      savedCards = await saveGeneratedCardsForParticipant(evaluation.matchId, participant.userId, publishedAt);
+      savedCards = await saveGeneratedCardsForParticipant(matchId, participant.userId, publishedAt);
     } catch (error) {
-      console.error("Supabase 카드 upsert 실패", { matchId: evaluation.matchId, userId: participant.userId, error });
+      console.error("Supabase 카드 upsert 실패", { matchId, userId: participant.userId, error });
       throw error;
     }
     if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
   }
   const refreshedCards = await refreshPlayerCardsAsync(currentUserId);
   console.info("Supabase 카드 refresh 완료", {
-    matchId: evaluation.matchId,
+    matchId,
     generatedCount: generatedCards.length,
-    refreshedMatchCards: refreshedCards?.matchCards?.filter((card) => card.matchId === evaluation.matchId).length || 0,
-    localMatchCards: (window.PlaylogOfficialData?.playerMatchCards || []).filter((card) => card.matchId === evaluation.matchId).length,
+    refreshedMatchCards: refreshedCards?.matchCards?.filter((card) => card.matchId === matchId).length || 0,
+    localMatchCards: (window.PlaylogOfficialData?.playerMatchCards || []).filter((card) => card.matchId === matchId).length,
   });
   return { published: true, generatedCards };
+}
+
+async function syncMatchCompletionAndPublish(evaluation) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === evaluation.matchId);
+  if (!match) return { published: false, generatedCards: [] };
+
+  const completion = await recalculateMatchEvaluationCompletionAsync(evaluation.matchId);
+  const timestamp = evaluation.updatedAt || evaluation.createdAt || new Date().toISOString();
+  if (!completion.allComplete && !isEvaluationDeadlineReached(match, timestamp)) {
+    return { published: false, generatedCards: [] };
+  }
+
+  return publishCompletedParticipants(evaluation.matchId, completion, timestamp);
+}
+
+async function syncDeadlineMatchPublication(match, now = new Date().toISOString()) {
+  if (!match || match.status === "published" || !isEvaluationDeadlineReached(match, now)) {
+    return { published: false, generatedCards: [] };
+  }
+  const completion = await recalculateMatchEvaluationCompletionAsync(match.id);
+  return publishCompletedParticipants(match.id, completion, now);
 }
 
 function disableLocalEvaluationFallback() {
@@ -1147,6 +1167,7 @@ function renderActiveMatchProgress() {
     document.querySelector("#activeMatchAction").hidden = true;
     return;
   }
+  queueDeadlineMatchPublications([match]);
   document.querySelector("#activeMatchAction").hidden = false;
   const waiting = window.PlaylogOfficialData.getPublishWaitingStatus?.(selectedMatchId);
   const pomResult = match.status === "published"
@@ -2985,9 +3006,31 @@ function enterEvaluationFlow(match) {
   setView("evaluate");
 }
 
+const deadlinePublishInFlight = new Set();
+
+function queueDeadlineMatchPublications(matches) {
+  if (!supabaseBridge()) return;
+  matches
+    .filter((match) => match.status !== "published" && isEvaluationDeadlineReached(match))
+    .forEach((match) => {
+      if (deadlinePublishInFlight.has(match.id)) return;
+      deadlinePublishInFlight.add(match.id);
+      syncDeadlineMatchPublication(match)
+        .then((result) => {
+          if (!result.published) return;
+          renderHome();
+          renderCards();
+          if (evaluationMode === "list") renderEvaluationList();
+        })
+        .catch((error) => reportSupabaseError(error, "Supabase 마감 경기 공개 처리 실패"))
+        .finally(() => deadlinePublishInFlight.delete(match.id));
+    });
+}
+
 function renderEvaluationList() {
   const pane = document.querySelector("#evaluationPane");
   const matches = currentUserMatches();
+  queueDeadlineMatchPublications(matches);
   document.querySelector(".eval-target").hidden = true;
   document.querySelector("#currentTarget").textContent = "경기 선택";
   document.querySelector(".eval-target").classList.remove("pulse");
