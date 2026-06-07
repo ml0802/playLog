@@ -293,6 +293,11 @@ function displayUserLabel(userId, scopeUserIds = null) {
   return displayUserName(userId);
 }
 
+function userSearchCode(userId) {
+  const user = appUser(userId) || {};
+  return user.playlogId ? `@${user.playlogId}` : userId;
+}
+
 function saveLoginSession(userId) {
   const user = appUser(userId);
   if (!user || user.status !== "approved" || isRookieDemoSessionUser(userId)) return;
@@ -863,6 +868,72 @@ function isAcceptedFriend(userId) {
   return (window.PlaylogOfficialData?.friends || []).some((friend) =>
     friend.userId === currentUserId && friend.friendUserId === userId && friend.status === "accepted",
   );
+}
+
+function friendshipRecord(userId) {
+  return (window.PlaylogOfficialData?.friends || []).find((friend) =>
+    (friend.userId === currentUserId && friend.friendUserId === userId)
+    || (friend.userId === userId && friend.friendUserId === currentUserId),
+  ) || null;
+}
+
+function friendAddStatus(userId) {
+  if (!userId || userId === currentUserId) return "self";
+  const friend = friendshipRecord(userId);
+  if (!friend) return "none";
+  if (friend.status === "accepted") return "accepted";
+  if (["pending", "requested", "requesting"].includes(friend.status)) return "pending";
+  return friend.status || "pending";
+}
+
+function friendAddActionHtml(userId, label = "친구 추가") {
+  const status = friendAddStatus(userId);
+  if (status === "accepted") return `<button type="button" disabled>친구</button>`;
+  if (status === "pending") return `<button type="button" disabled>친구 요청 중</button>`;
+  if (status === "self") return `<button type="button" disabled>본인</button>`;
+  return `<button data-add-friend-user="${userId}" type="button"><span>＋</span> ${label}</button>`;
+}
+
+function friendSearchCard(user) {
+  const summary = friendProfileSummary(user.id);
+  const name = displayUserName(user.id);
+  const positionLabel = positionLabels[user.mainPosition]?.[0] || user.mainPosition || "포지션 준비중";
+  const roleLabel = user.preferredRole || summary.style;
+  return `
+    <article class="friend-card search-card enhanced-search-card">
+      <i style="${presetStyle(avatarPresetForUser(user.id))}">${name.slice(0, 1)}</i>
+      <div class="search-card-body">
+        <strong>${escapeHtml(name)}</strong>
+        <p>${escapeHtml(userSearchCode(user.id))} · ${escapeHtml(positionLabel)}</p>
+        <div class="search-card-tags"><span>${escapeHtml(positionLabel)}</span><span>${escapeHtml(roleLabel)}</span></div>
+        <small>${escapeHtml(summary.ovr)} · ${escapeHtml(summary.style)}</small>
+      </div>
+      ${friendAddActionHtml(user.id)}
+    </article>
+  `;
+}
+
+function bindFriendAddButtons(scope, afterSuccess = null) {
+  scope.querySelectorAll("[data-add-friend-user]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const friendUserId = button.dataset.addFriendUser;
+      button.disabled = true;
+      try {
+        await addFriendAsync({
+          userId: currentUserId,
+          friendUserId,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        button.disabled = false;
+        reportSupabaseError(error, "Supabase 친구 추가 실패");
+        return;
+      }
+      renderFriends();
+      if (typeof afterSuccess === "function") afterSuccess(friendUserId);
+      showToast("친구 목록에 추가되었습니다.");
+    });
+  });
 }
 
 function friendProfileSummary(userId) {
@@ -2230,6 +2301,7 @@ function matchResultDetailTemplate() {
         return `<button class="match-result-player" data-match-result-card="${card.matchId}" data-card-user="${card.userId}" type="button"><i>${name.slice(0, 1)}</i><span><strong>${name}</strong><small>${identity.label} · ${identity.code} · ${identity.playStyle}</small></span><b>OVR ${card.overallRating}</b></button>`;
       }).join("") || "<p>공개된 참가자 카드가 아직 없습니다.</p>"}</div>
     </section>
+    ${matchResultFriendAddSection(match)}
     <button class="secondary full" data-open-match-result-summary type="button">결과 요약으로 돌아가기</button>
   `;
 }
@@ -2292,6 +2364,36 @@ function matchResultParticipantCards() {
   return cards;
 }
 
+function matchResultFriendAddSection(match = activeMatchRecord()) {
+  const participants = (match?.participants || [])
+    .map((participant) => participant.userId)
+    .filter((userId, index, userIds) => userId && userId !== currentUserId && userIds.indexOf(userId) === index);
+  if (!participants.length) return "";
+  return `
+    <section class="match-result-friend-section">
+      <div class="match-result-friend-head">
+        <strong>함께 플레이한 친구 추가</strong>
+        <small>${participants.length}명</small>
+      </div>
+      <div class="match-result-friend-list">
+        ${participants.map((userId) => {
+          const name = displayUserName(userId);
+          return `
+            <article class="friend-card match-result-friend-card">
+              <i style="${presetStyle(avatarPresetForUser(userId))}">${name.slice(0, 1)}</i>
+              <div>
+                <strong>${escapeHtml(name)}</strong>
+                <small>${escapeHtml(userSearchCode(userId))}</small>
+              </div>
+              ${friendAddActionHtml(userId)}
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function openMatchResultView(mode = "summary", card = null) {
   matchResultMode = mode;
   matchResultSelectedCard = card;
@@ -2338,6 +2440,7 @@ function renderMatchResult() {
           </button>`;
         }).join("") || `<article class="empty-card"><strong>공개된 참가자 카드가 아직 없습니다.</strong></article>`}
       </div>
+      ${matchResultFriendAddSection(match)}
       <div class="match-result-bottom-actions">
         <button class="primary full" data-go-evaluation-list type="button">경기 선택으로 이동</button>
       </div>
@@ -2394,6 +2497,9 @@ function bindMatchResultControls(scope) {
         renderMatchResult();
       }
     });
+  });
+  bindFriendAddButtons(scope, () => {
+    renderMatchResult();
   });
 }
 
@@ -2463,10 +2569,10 @@ function openSheet(kind, payload = null) {
       </div>
     `,
     friend: `
-      <h3>Playlog ID로 친구 추가</h3>
-      <p>친구 추가는 Playlog ID로 검색합니다.</p>
-      <label class="field-label"><span>Playlog ID</span><input id="friendPlaylogIdSearch" placeholder="예: rookie10" /></label>
-      <button class="primary full" id="searchFriendById" type="button">검색</button>
+      <h3>닉네임으로 친구 추가</h3>
+      <p>같은 닉네임이 있으면 ID를 확인하고 선택해주세요.</p>
+      <label class="field-label"><span>닉네임</span><input id="friendNicknameSearch" placeholder="예: 미나미" /></label>
+      <button class="primary full" id="searchFriendByNickname" type="button">검색</button>
       <div class="friend-search-result" id="friendSearchResult"></div>
     `,
     profileEdit: `
@@ -2633,66 +2739,38 @@ function openSheet(kind, payload = null) {
     const result = sheet.querySelector("#friendSearchResult");
     if (result) result.innerHTML = message;
   };
-  sheet.querySelector("#searchFriendById")?.addEventListener("click", async () => {
-    const query = normalizePlaylogId(sheet.querySelector("#friendPlaylogIdSearch")?.value || "");
+  sheet.querySelector("#searchFriendByNickname")?.addEventListener("click", async () => {
+    const query = String(sheet.querySelector("#friendNicknameSearch")?.value || "").trim().toLowerCase();
     if (!query) {
-      renderFriendSearchResult(`<p class="search-message">Playlog ID를 입력해주세요.</p>`);
+      renderFriendSearchResult(`<p class="search-message">닉네임을 입력해주세요.</p>`);
       return;
     }
-    let user = null;
     try {
-      user = await findUserByPlaylogIdAsync(query);
+      const bridge = requireSupabaseBridge();
+      await bridge.refreshUsers();
+      await bridge.refreshFriends(currentUserId);
     } catch (error) {
       reportSupabaseError(error, "Supabase 사용자 검색 실패");
       renderFriendSearchResult(`<p class="search-message">Supabase 사용자 검색에 실패했습니다. 콘솔 로그를 확인해주세요.</p>`);
       return;
     }
-    if (!user || (!canSeeTestUsers() && isHiddenFromPublicSearch(user))) {
-      renderFriendSearchResult(`<p class="search-message">해당 Playlog ID의 사용자를 찾을 수 없습니다.</p>`);
+    const users = (window.PlaylogOfficialData?.users || [])
+      .filter((user) =>
+        user.id !== currentUserId
+        && user.status === "approved"
+        && (canSeeTestUsers() || !isHiddenFromPublicSearch(user))
+        && String(user.nickname || "").trim().toLowerCase().includes(query))
+      .sort((left, right) =>
+        String(left.nickname || "").localeCompare(String(right.nickname || ""), "ko")
+        || String(left.playlogId || left.id).localeCompare(String(right.playlogId || right.id), "ko"));
+    if (!users.length) {
+      renderFriendSearchResult(`<p class="search-message">해당 닉네임의 사용자를 찾을 수 없습니다.</p>`);
       return;
     }
-    if (user.id === currentUserId) {
-      renderFriendSearchResult(`<p class="search-message">본인은 친구로 추가할 수 없습니다.</p>`);
-      return;
-    }
-    if (user.status !== "approved") {
-      renderFriendSearchResult(`<p class="search-message">아직 승인되지 않은 사용자입니다.</p>`);
-      return;
-    }
-    if (isAcceptedFriend(user.id)) {
-      renderFriendSearchResult(`<p class="search-message">이미 친구입니다.</p>`);
-      return;
-    }
-    const summary = friendProfileSummary(user.id);
-    const positionLabel = positionLabels[user.mainPosition]?.[0] || user.mainPosition || "포지션 준비중";
-    const roleLabel = user.preferredRole || summary.style;
-    renderFriendSearchResult(`
-      <article class="friend-card search-card enhanced-search-card">
-        <i>${displayUserName(user.id).slice(0, 1)}</i>
-        <div class="search-card-body">
-          <strong>${displayUserName(user.id)}</strong>
-          <p>@${user.playlogId} · ${positionLabel}</p>
-          <div class="search-card-tags"><span>${positionLabel}</span><span>${roleLabel}</span></div>
-          <small>${summary.ovr} · ${summary.style}</small>
-        </div>
-        <button data-confirm-add-friend="${user.id}" type="button"><span>＋</span> 친구 추가</button>
-      </article>
-    `);
-    sheet.querySelector("[data-confirm-add-friend]")?.addEventListener("click", async (event) => {
-      const friendUserId = event.currentTarget.dataset.confirmAddFriend;
-      try {
-        await addFriendAsync({
-          userId: currentUserId,
-          friendUserId,
-          createdAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        reportSupabaseError(error, "Supabase 친구 추가 실패");
-        return;
-      }
+    renderFriendSearchResult(users.map(friendSearchCard).join(""));
+    bindFriendAddButtons(sheet, () => {
       renderFriends();
       closeSheet();
-      showToast("친구 목록에 추가되었습니다.");
     });
   });
   sheet.querySelectorAll("[data-add-friend]").forEach((button) => button.addEventListener("click", async () => {
@@ -2711,6 +2789,11 @@ function openSheet(kind, payload = null) {
     closeSheet();
     showToast("친구 목록에 추가되었습니다.");
   }));
+  if (kind === "matchResultDetail") {
+    bindFriendAddButtons(sheet, () => {
+      openSheet("matchResultDetail");
+    });
+  }
 }
 
 function closeSheet() {
