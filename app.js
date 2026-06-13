@@ -66,6 +66,7 @@ const playTypeCatalog = {
     ["올라운드 플레이어", "All-Round Player"],
   ],
 };
+const playTypePositionAlias = { am: "cam", dm: "cdm" };
 const profilePresetLabels = {
   "attack-0": "침투형 골게터",
   "attack-1": "포스트 플레이어",
@@ -3685,6 +3686,19 @@ function reflectionActions(nextLabel = "다음") {
   return `<div class="eval-actions"><button class="secondary" data-reflection-prev type="button">이전</button><button class="primary" data-reflection-next type="button">${nextLabel}</button></div>`;
 }
 
+function playTypesForPosition(position = "free") {
+  const catalogKey = playTypePositionAlias[position] || position || "free";
+  return playTypeCatalog[catalogKey] || playTypeCatalog.free;
+}
+
+function renderQuickReflectionPlayTypes(position = "free") {
+  const options = playTypesForPosition(position);
+  return `<div class="selector-grid">${options.map(([label, description]) => {
+    const selected = reflectionTraits[0] === label;
+    return `<button class="choice-card ${selected ? "selected" : ""}" data-quick-reflection-play-type="${escapeHtml(label)}" type="button"><strong>${escapeHtml(label)}</strong><br><small>${escapeHtml(description)}</small></button>`;
+  }).join("")}</div>`;
+}
+
 function buildSelfReflection(id) {
   const position = reflectionPosition || "free";
   const quick = reflectionType === "quick";
@@ -3702,8 +3716,10 @@ function buildSelfReflection(id) {
       ...evaluationFields.common.map((field) => ({ category: "common", key: field.key, score: reflectionCommonScores[field.key] })),
       ...evaluationFields.position[position].map((field) => ({ category: "position", key: field.key, score: reflectionPositionScores[field.key] })),
     ],
-    selfTraits: reflectionTraits.map((key) => ({ key, score: reflectionTraitScores[key] || observedTraitScore })),
-    selfHighlights: reflectionHighlights.slice(0, 2).map((key) => ({ key })),
+    selfTraits: quick
+      ? reflectionTraits.slice(0, 1).map((key) => ({ key, label: key, score: null }))
+      : reflectionTraits.map((key) => ({ key, score: reflectionTraitScores[key] || observedTraitScore })),
+    selfHighlights: quick ? [] : reflectionHighlights.slice(0, 2).map((key) => ({ key })),
     satisfactionScore,
     feltStrength: feltStrength.trim(),
     feltWeakness: feltWeakness.trim(),
@@ -3766,7 +3782,7 @@ function renderReflection() {
     pane.innerHTML = `<h3 class="eval-subtitle focus-title">오늘의 ${positionLabel} 느낌 <small>자가 기준</small></h3><div class="rating-list">${renderSelfRatingFields(positionFields, "position", reflectionPositionScores)}</div>${reflectionActions()}`;
   } else if (reflectionStep === 3) {
     pane.innerHTML = reflectionType === "quick"
-      ? `<h3 class="eval-subtitle">플레이유형 선택 <small>선택 입력 · 1~10점</small></h3><div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, reflectionTraits, reflectionTraitScores, "reflection-trait")}</div>${reflectionActions()}`
+      ? `<h3 class="eval-subtitle">플레이유형 선택 <small>포지션별 1개 선택</small></h3>${renderQuickReflectionPlayTypes(reflectionPosition)}${reflectionActions()}`
       : `<h3 class="eval-subtitle">플레이 성향 <small>선택 입력 · 1~10점</small></h3><div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, reflectionTraits, reflectionTraitScores, "reflection-trait")}</div><h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3><div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${reflectionHighlights.includes(field.key) ? "selected" : ""}" data-reflection-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>${reflectionActions()}`;
   } else if (reflectionStep === 4) {
     pane.innerHTML = `<label>오늘 만족도<input id="reflectionSatisfaction" type="range" min="1" max="10" value="${satisfactionScore}" /></label><div class="self-result"><span>만족도</span><strong id="reflectionSatisfactionValue">${satisfactionScore}</strong></div><label>가장 만족한 점<textarea id="reflectionStrength" rows="2" placeholder="예: 오늘은 압박을 받기 전에 먼저 패스를 선택했다.">${feltStrength}</textarea></label><label>가장 아쉬운 점<textarea id="reflectionWeakness" rows="2" placeholder="예: 좋은 위치에서 슈팅 타이밍을 한 번 놓쳤다.">${feltWeakness}</textarea></label><label>다음 경기 목표<input id="reflectionGoal" value="${reflectionGoal}" placeholder="예: 첫 터치 후 전방을 한 번 더 보기" /></label><label>자유 메모<textarea id="reflectionMemo" rows="3" placeholder="오늘 경기에서 기억하고 싶은 장면을 짧게 남겨보세요.">${reflectionMemo}</textarea></label>${reflectionActions("회고 저장하기")}`;
@@ -3783,6 +3799,10 @@ function renderReflection() {
     reflectionPositionScores = reflectionType === "quick"
       ? { positionPerformance: null }
       : Object.fromEntries(evaluationFields.position[reflectionPosition].map((field) => [field.key, null]));
+    if (reflectionType === "quick") {
+      reflectionTraits = [];
+      reflectionTraitScores = {};
+    }
     renderReflection();
   }));
   pane.querySelectorAll("[data-self-rating-value]").forEach((button) => button.addEventListener("click", () => {
@@ -3806,6 +3826,14 @@ function renderReflection() {
     reflectionTraitScores[key] = Number(button.dataset.reflectionTraitValue);
     updateRatingSelection(button, "[data-reflection-trait-value]");
     button.closest(".rating-card")?.classList.add("selected");
+  }));
+  pane.querySelectorAll("[data-quick-reflection-play-type]").forEach((button) => button.addEventListener("click", () => {
+    const playType = button.dataset.quickReflectionPlayType;
+    reflectionTraits = playType ? [playType] : [];
+    reflectionTraitScores = {};
+    pane.querySelectorAll("[data-quick-reflection-play-type]").forEach((item) => {
+      item.classList.toggle("selected", item === button);
+    });
   }));
   pane.querySelectorAll("[data-reflection-highlight]").forEach((button) => button.addEventListener("click", () => {
     const key = button.dataset.reflectionHighlight;
@@ -3857,6 +3885,10 @@ function renderReflection() {
     }
     if (reflectionStep === 2 && (!reflectionPosition || !hasAllScores(reflectionPositionFields, reflectionPositionScores))) {
       showToast("포지션 자가평가를 모두 선택해주세요.");
+      return;
+    }
+    if (reflectionType === "quick" && reflectionStep === 3 && !reflectionTraits.length) {
+      showToast("플레이유형을 선택해주세요.");
       return;
     }
     if (reflectionStep === reflectionSteps.length - 1) {
@@ -3930,7 +3962,12 @@ function openReflectionDetail(reflectionId) {
   const scoreSummary = (reflection.selfScores || [])
     .map((score) => `<span>${reflection.reflectionType === "quick" ? (quickLabels[score.key] || fieldLabel(score.key)) : fieldLabel(score.key)} ${score.score}</span>`)
     .join("");
-  const traits = (reflection.selfTraits || []).map((trait) => `<span>${fieldLabel(trait.key)} ${trait.score || "-"}</span>`).join("") || "<span>선택 없음</span>";
+  const traits = (reflection.selfTraits || []).map((trait) => {
+    const label = trait.label || trait.key;
+    return reflection.reflectionType === "quick"
+      ? `<span>${escapeHtml(label)}</span>`
+      : `<span>${fieldLabel(trait.key)} ${trait.score || "-"}</span>`;
+  }).join("") || "<span>선택 없음</span>";
   const highlights = (reflection.selfHighlights || []).map((item) => `<span>${fieldLabel(item.key)}</span>`).join("") || "<span>선택 없음</span>";
   sheet.className = "sheet reflection-detail-sheet";
   sheet.innerHTML = `
