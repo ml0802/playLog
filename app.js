@@ -105,6 +105,8 @@ const evaluationFields = window.PlaylogEngine.EVALUATION_FIELDS;
 const quickEvaluationFields = window.PlaylogEngine.QUICK_EVALUATION_FIELDS;
 const savedLoginStorageKey = "playlog.currentUser";
 let currentUserId = null;
+let appBootstrapped = false;
+let authRestoring = true;
 const currentMatchId = window.PlaylogOfficialData?.activeEvaluationMatchId || "match:sangam-2026-05-23";
 let selectedMatchId = currentMatchId;
 const observedTraitScore = 8;
@@ -682,6 +684,19 @@ function isCurrentUserApproved() {
   return Boolean(currentUserId && appUser(currentUserId)?.status === "approved");
 }
 
+function canRenderProtectedViews() {
+  return appBootstrapped && !authRestoring && isCurrentUserApproved();
+}
+
+function renderProtectedViews() {
+  if (!canRenderProtectedViews()) return;
+  renderHome();
+  renderEvaluation();
+  renderReflection();
+  renderCards();
+  renderFriends();
+}
+
 function isRookieDemoSessionUser(userId = currentUserId) {
   return userId === "user:rookie-demo" || String(userId || "").startsWith("user:rookie-session-");
 }
@@ -797,11 +812,8 @@ function loginAs(userId, { persist = true } = {}) {
   authMode = "landing";
   if (isCurrentUserApproved()) {
     if (persist) saveLoginSession(userId);
-    renderHome();
-    renderEvaluation();
-    renderReflection();
-    renderCards();
-    renderFriends();
+    if (!canRenderProtectedViews()) return;
+    renderProtectedViews();
     setView("home");
   } else {
     setView("auth");
@@ -3110,7 +3122,7 @@ function applyAvatarPreset() {
 }
 
 function renderHome() {
-  if (!isCurrentUserApproved()) return;
+  if (!canRenderProtectedViews()) return;
   const stats = currentHomeStats();
   const analysisCard = currentFormAnalysisCard();
   const monthlyCard = latestHomeMonthlyCard();
@@ -3336,6 +3348,7 @@ function renderEvaluationList() {
 }
 
 function renderEvaluation() {
+  if (!canRenderProtectedViews()) return;
   if (evaluationMode === "list") {
     renderEvaluationList();
     return;
@@ -3803,6 +3816,7 @@ function buildSelfReflection(id) {
 }
 
 function renderReflection() {
+  if (!canRenderProtectedViews()) return;
   const card = document.querySelector(".reflection-card");
   if (reflectionMode === "list") {
     card.innerHTML = `
@@ -4201,6 +4215,18 @@ function openReflectionDetail(reflectionId) {
 function renderAuth() {
   const pane = document.querySelector("#authPane");
   if (!pane) return;
+  if (authRestoring) {
+    pane.innerHTML = `
+      <div class="landing-copy">
+        <h1>PLAYLOG</h1>
+        <p>로그인 상태를 확인하고 있습니다.</p>
+      </div>
+      <div class="auth-login-box">
+        <button class="secondary full" type="button" disabled>불러오는 중</button>
+      </div>
+    `;
+    return;
+  }
   const user = appUser(currentUserId);
   const sampleCard = `
     <article class="landing-player-card">
@@ -4375,6 +4401,7 @@ function renderAuth() {
 }
 
 function renderNewMatch() {
+  if (!canRenderProtectedViews()) return;
   if (!newMatchDraft) resetNewMatchDraft();
   const pane = document.querySelector("#newMatchPane");
   const candidates = matchParticipantCandidates();
@@ -4515,6 +4542,7 @@ function renderNewMatch() {
 }
 
 function renderCards() {
+  if (!canRenderProtectedViews()) return;
   activeCardTab = activeCardTab === "monthly" ? "monthly" : "match";
   activeCardScope = activeCardScope === "quick" ? "quick" : "official";
   const segments = document.querySelector(".card-segments");
@@ -4587,6 +4615,7 @@ function renderCards() {
 }
 
 function renderFriends() {
+  if (!canRenderProtectedViews()) return;
   if (showingMyProfile) {
     renderMyProfile();
     return;
@@ -4660,7 +4689,7 @@ function renderFriends() {
 }
 
 function setView(view) {
-  if (view !== "auth" && !isCurrentUserApproved()) view = "auth";
+  if (view !== "auth" && !canRenderProtectedViews()) view = "auth";
   document.querySelectorAll(".content-view").forEach((section) => section.classList.toggle("active", section.dataset.view === view));
   document.querySelectorAll(".tabbar button").forEach((button) => button.classList.toggle("active", button.dataset.go === view));
   document.querySelector(".hero").hidden = view !== "home";
@@ -4813,7 +4842,16 @@ disableLocalAwardVoteFallback();
 disableLocalSelfReflectionFallback();
 bindInteractions();
 (async function initializeApp() {
+  appBootstrapped = false;
+  authRestoring = true;
+  setView("auth");
   const restored = await restoreSavedLogin();
-  if (restored) return;
+  authRestoring = false;
+  appBootstrapped = true;
+  if (restored && isCurrentUserApproved()) {
+    renderProtectedViews();
+    setView("home");
+    return;
+  }
   setView("auth");
 })();
