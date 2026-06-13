@@ -1395,7 +1395,6 @@ function currentFormBasisLabel(stats) {
 function latestMonthlyCardForUser(userId = currentUserId) {
   return (window.PlaylogOfficialData?.playerMonthlyCards || [])
     .filter((card) => card && card.userId === userId)
-    .filter((card) => monthlyMatchCards(card).length > 0)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
 }
 
@@ -1408,7 +1407,6 @@ function quickMatchCardsForUser(userId = currentUserId) {
 function quickMonthlyCardsForUser(userId = currentUserId) {
   return (window.PlaylogOfficialData?.quickPlayerMonthlyCards || [])
     .filter((card) => card && card.userId === userId)
-    .filter((card) => quickMonthlyMatchCards(card).length > 0)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey));
 }
 
@@ -1470,7 +1468,6 @@ function userMatchCards(userId = currentUserId) {
 function userMonthlyCards(userId = currentUserId) {
   return (window.PlaylogOfficialData?.playerMonthlyCards || [])
     .filter((card) => card && card.userId === userId)
-    .filter((card) => monthlyMatchCards(card).length > 0)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey));
 }
 
@@ -3751,7 +3748,9 @@ function renderReflection() {
       : reflectionPosition ? evaluationFields.position[reflectionPosition] : [];
     pane.innerHTML = `<h3 class="eval-subtitle focus-title">오늘의 ${positionLabel} 느낌 <small>자가 기준</small></h3><div class="rating-list">${renderSelfRatingFields(positionFields, "position", reflectionPositionScores)}</div>${reflectionActions()}`;
   } else if (reflectionStep === 3) {
-    pane.innerHTML = `<h3 class="eval-subtitle">플레이 성향 <small>선택 입력 · 1~10점</small></h3><div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, reflectionTraits, reflectionTraitScores, "reflection-trait")}</div><h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3><div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${reflectionHighlights.includes(field.key) ? "selected" : ""}" data-reflection-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>${reflectionActions()}`;
+    pane.innerHTML = reflectionType === "quick"
+      ? `<h3 class="eval-subtitle">플레이유형 선택 <small>선택 입력 · 1~10점</small></h3><div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, reflectionTraits, reflectionTraitScores, "reflection-trait")}</div>${reflectionActions()}`
+      : `<h3 class="eval-subtitle">플레이 성향 <small>선택 입력 · 1~10점</small></h3><div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, reflectionTraits, reflectionTraitScores, "reflection-trait")}</div><h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3><div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${reflectionHighlights.includes(field.key) ? "selected" : ""}" data-reflection-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>${reflectionActions()}`;
   } else if (reflectionStep === 4) {
     pane.innerHTML = `<label>오늘 만족도<input id="reflectionSatisfaction" type="range" min="1" max="10" value="${satisfactionScore}" /></label><div class="self-result"><span>만족도</span><strong id="reflectionSatisfactionValue">${satisfactionScore}</strong></div><label>가장 만족한 점<textarea id="reflectionStrength" rows="2" placeholder="예: 오늘은 압박을 받기 전에 먼저 패스를 선택했다.">${feltStrength}</textarea></label><label>가장 아쉬운 점<textarea id="reflectionWeakness" rows="2" placeholder="예: 좋은 위치에서 슈팅 타이밍을 한 번 놓쳤다.">${feltWeakness}</textarea></label><label>다음 경기 목표<input id="reflectionGoal" value="${reflectionGoal}" placeholder="예: 첫 터치 후 전방을 한 번 더 보기" /></label><label>자유 메모<textarea id="reflectionMemo" rows="3" placeholder="오늘 경기에서 기억하고 싶은 장면을 짧게 남겨보세요.">${reflectionMemo}</textarea></label>${reflectionActions("회고 저장하기")}`;
   } else {
@@ -3850,7 +3849,10 @@ function renderSelfRatingFields(fields, category, ratings) {
 function renderReflectionHistory() {
   const history = document.querySelector("#reflectionHistory");
   if (!history) return;
-  const reflections = (window.PlaylogOfficialData?.selfReflections || [])
+  const reflections = [
+    ...(window.PlaylogOfficialData?.selfReflections || []),
+    ...(window.PlaylogOfficialData?.quickSelfReflections || []),
+  ]
     .filter((item) => item.userId === currentUserId)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   if (!reflections.length) {
@@ -3862,7 +3864,7 @@ function renderReflectionHistory() {
     <div class="reflection-history-list">
       ${reflections.map((item) => {
         const date = new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" });
-        const matchText = item.matchId ? "경기 연결" : "빠른 회고";
+        const matchText = item.reflectionType === "quick" ? "퀵 회고" : item.matchId ? "경기 연결" : "빠른 회고";
         const positionText = positionLabels[item.selectedPosition]?.[0] || item.selectedPosition || "-";
         const summary = item.nextGoal || item.memo || "아직 다음 목표를 정리하지 않았어요.";
         return `<button class="reflection-history-card" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span>${matchText}</span></div><p>${escapeHtml(summary)}</p></button>`;
@@ -3875,14 +3877,25 @@ function renderReflectionHistory() {
 }
 
 function openReflectionDetail(reflectionId) {
-  const reflection = (window.PlaylogOfficialData?.selfReflections || []).find((item) => item.id === reflectionId);
+  const reflection = [
+    ...(window.PlaylogOfficialData?.selfReflections || []),
+    ...(window.PlaylogOfficialData?.quickSelfReflections || []),
+  ].find((item) => item.id === reflectionId);
   if (!reflection) return;
   const overlay = document.querySelector("#overlay");
   const sheet = document.querySelector("#sheet");
   const date = new Date(reflection.createdAt).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
   const position = positionLabels[reflection.selectedPosition]?.[0] || reflection.selectedPosition;
+  const quickLabels = {
+    activity: "활동량",
+    pass: "패스",
+    ballControl: "볼 컨트롤",
+    decision: "판단력",
+    gameUnderstanding: "경기 이해도",
+    positionPerformance: "포지션 수행도",
+  };
   const scoreSummary = (reflection.selfScores || [])
-    .map((score) => `<span>${fieldLabel(score.key)} ${score.score}</span>`)
+    .map((score) => `<span>${reflection.reflectionType === "quick" ? (quickLabels[score.key] || fieldLabel(score.key)) : fieldLabel(score.key)} ${score.score}</span>`)
     .join("");
   const traits = (reflection.selfTraits || []).map((trait) => `<span>${fieldLabel(trait.key)} ${trait.score || "-"}</span>`).join("") || "<span>선택 없음</span>";
   const highlights = (reflection.selfHighlights || []).map((item) => `<span>${fieldLabel(item.key)}</span>`).join("") || "<span>선택 없음</span>";
@@ -3894,7 +3907,7 @@ function openReflectionDetail(reflectionId) {
     </div>
     <div class="reflection-detail-meta">
       <span>${date}</span>
-      <span>${reflection.matchId ? `경기 연결 · ${reflection.matchId}` : "빠른 회고"}</span>
+      <span>${reflection.reflectionType === "quick" ? "퀵 회고" : reflection.matchId ? `경기 연결 · ${reflection.matchId}` : "빠른 회고"}</span>
     </div>
     <div class="reflection-detail-grid">
       <article><small>포지션</small><strong>${position}</strong></article>
@@ -4445,11 +4458,13 @@ function bindInteractions() {
       openSheet("card");
     }
   });
-  document.querySelectorAll("[data-card-tab]").forEach((button) => button.addEventListener("click", () => {
-    activeCardTab = button.dataset.cardTab;
-    renderCards();
-  }));
   document.addEventListener("click", (event) => {
+    const tabButton = event.target.closest("[data-card-tab]");
+    if (tabButton) {
+      activeCardTab = tabButton.dataset.cardTab === "monthly" ? "monthly" : "match";
+      renderCards();
+      return;
+    }
     const scopeButton = event.target.closest("[data-card-scope]");
     if (!scopeButton) return;
     activeCardScope = scopeButton.dataset.cardScope === "quick" ? "quick" : "official";

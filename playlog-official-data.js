@@ -648,6 +648,7 @@
   }
 
   function saveSelfReflection(reflection) {
+    const isQuickReflection = reflection.reflectionType === "quick";
     const selectedPosition = engine.EVALUATION_FIELDS.position[reflection.selectedPosition]
       ? reflection.selectedPosition
       : "free";
@@ -659,11 +660,16 @@
       id: reflection.id,
       userId: reflection.userId,
       matchId: reflection.matchId || null,
+      reflectionType: isQuickReflection ? "quick" : "official",
       selectedPosition,
-      selfScores: (reflection.selfScores || []).filter((score) =>
-        (score.category === "common" && commonKeys.has(score.key))
-        || (score.category === "position" && positionKeys.has(score.key)),
-      ).map((score) => ({ category: score.category, key: score.key, score: Number(score.score) })),
+      selfScores: isQuickReflection
+        ? (reflection.selfScores || [])
+          .filter((score) => score.category === "quick")
+          .map((score) => ({ category: "quick", key: score.key, score: Number(score.score) }))
+        : (reflection.selfScores || []).filter((score) =>
+          (score.category === "common" && commonKeys.has(score.key))
+          || (score.category === "position" && positionKeys.has(score.key)),
+        ).map((score) => ({ category: score.category, key: score.key, score: Number(score.score) })),
       selfTraits: (reflection.selfTraits || []).filter((trait) => traitKeys.has(trait.key))
         .map((trait) => ({ key: trait.key, score: Number(trait.score) })),
       selfHighlights: (reflection.selfHighlights || []).filter((highlight) => highlightKeys.has(highlight.key))
@@ -675,9 +681,10 @@
       memo: reflection.memo || "",
       createdAt: reflection.createdAt || new Date().toISOString(),
     };
-    const existingIndex = selfReflections.findIndex((item) => item.id === savedReflection.id);
-    if (existingIndex >= 0) selfReflections[existingIndex] = savedReflection;
-    else selfReflections.push(savedReflection);
+    const collection = isQuickReflection ? quickSelfReflections : selfReflections;
+    const existingIndex = collection.findIndex((item) => item.id === savedReflection.id);
+    if (existingIndex >= 0) collection[existingIndex] = savedReflection;
+    else collection.push(savedReflection);
     return savedReflection;
   }
 
