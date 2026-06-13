@@ -3980,11 +3980,13 @@ function renderReflectionHistory() {
     <div class="reflection-history-list">
       ${reflections.map((item) => {
         const date = new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" });
-        const matchText = item.reflectionType === "quick" ? "퀵 회고" : item.matchId ? "경기 연결" : "빠른 회고";
+        const reflectionKindHtml = item.reflectionType === "quick"
+          ? `<span class="reflection-kind quick">퀵 회고</span>`
+          : "";
         const positionText = positionLabels[item.selectedPosition]?.[0] || item.selectedPosition || "-";
         const summary = item.nextGoal || item.memo || "아직 다음 목표를 정리하지 않았어요.";
         const selected = selectedReflectionIds.has(item.id);
-        return `<article class="reflection-history-card ${reflectionSelectionMode ? "selectable" : ""} ${selected ? "selected" : ""}" data-reflection-card="${item.id}"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span class="reflection-kind ${item.reflectionType === "quick" ? "quick" : "official"}">${matchText}</span></div><p>${escapeHtml(summary)}</p></button>${reflectionSelectionMode ? `<span class="reflection-check" aria-hidden="true">${selected ? "✓" : ""}</span>` : ""}</article>`;
+        return `<article class="reflection-history-card ${reflectionSelectionMode ? "selectable" : ""} ${selected ? "selected" : ""}" data-reflection-card="${item.id}"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong>${reflectionKindHtml}</div><p>${escapeHtml(summary)}</p></button>${reflectionSelectionMode ? `<span class="reflection-check" aria-hidden="true">${selected ? "✓" : ""}</span>` : ""}</article>`;
       }).join("")}
     </div>
   `;
@@ -4084,6 +4086,9 @@ function openReflectionDetail(reflectionId) {
   const sheet = document.querySelector("#sheet");
   const date = new Date(reflection.createdAt).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
   const position = positionLabels[reflection.selectedPosition]?.[0] || reflection.selectedPosition;
+  const reflectionDetailType = reflection.reflectionType === "quick"
+    ? `<span>퀵 회고</span>`
+    : reflection.matchId ? `<span>경기 연결 · ${reflection.matchId}</span>` : "";
   const quickLabels = {
     activity: "활동량",
     pass: "패스",
@@ -4110,7 +4115,7 @@ function openReflectionDetail(reflectionId) {
     </div>
     <div class="reflection-detail-meta">
       <span>${date}</span>
-      <span>${reflection.reflectionType === "quick" ? "퀵 회고" : reflection.matchId ? `경기 연결 · ${reflection.matchId}` : "빠른 회고"}</span>
+      ${reflectionDetailType}
     </div>
     <div class="reflection-detail-grid">
       <article><small>포지션</small><strong>${position}</strong></article>

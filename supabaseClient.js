@@ -1246,18 +1246,26 @@ async function saveSelfReflection(reflection) {
 
 async function deleteSelfReflection(reflection) {
   assertClient();
-  const table = reflection.reflectionType === "quick" ? "quick_self_reflections" : "self_reflections";
-  const { error } = await supabase
+  const reflectionType = reflection.reflectionType === "quick" ? "quick" : "official";
+  const table = reflectionType === "quick" ? "quick_self_reflections" : "self_reflections";
+  const id = reflection.id;
+  const userId = reflection.userId || reflection.user_id;
+  if (!id || !userId) throw new Error("deleteSelfReflection: reflection id and userId are required");
+  const { data, error } = await supabase
     .from(table)
     .delete()
-    .eq("id", reflection.id)
-    .eq("user_id", reflection.userId);
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("id");
   if (error) {
     reportSupabaseQueryError("deleteSelfReflection:deleteSelfReflection", error);
     throw error;
   }
-  removeSelfReflection(reflection.id, reflection.reflectionType);
-  return { id: reflection.id, reflectionType: reflection.reflectionType };
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(`deleteSelfReflection: no row deleted from ${table}. Check id/user_id and DELETE RLS policy.`);
+  }
+  removeSelfReflection(id, reflectionType);
+  return { id, reflectionType };
 }
 
 async function refreshPlayerCards(userId) {
