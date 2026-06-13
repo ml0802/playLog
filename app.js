@@ -208,6 +208,10 @@ let showingMyProfile = false;
 let activeRookieSessionId = null;
 let toastTimer;
 
+function qaLog(label, payload = {}) {
+  console.info(`[PlaylogQA] ${label}`, payload);
+}
+
 function resetEvaluationDraft() {
   selectedPosition = null;
   commonScores = Object.fromEntries(evaluationFields.common.map((field) => [field.key, null]));
@@ -3644,10 +3648,11 @@ function selectionActions() {
   return `<div class="eval-actions three"><button class="secondary" data-prev type="button">이전</button><button class="secondary" data-skip type="button">건너뛰기</button><button class="primary" data-next type="button">다음</button></div>`;
 }
 
-function resetReflection(matchId = null) {
+function resetReflection(matchId = null, forcedType = null) {
   reflectionStep = 0;
   reflectionMatchId = matchId;
-  reflectionType = matchType((window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId));
+  reflectionType = forcedType || matchType((window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId));
+  qaLog("resetReflection", { matchId, reflectionType });
   reflectionPosition = null;
   reflectionCommonScores = reflectionType === "quick"
     ? Object.fromEntries(quickEvaluationFields.common.map((field) => [field.key, null]))
@@ -3663,9 +3668,9 @@ function resetReflection(matchId = null) {
   reflectionMemo = "";
 }
 
-function startReflection(matchId = null) {
+function startReflection(matchId = null, forcedType = null) {
   reflectionMode = "form";
-  resetReflection(matchId);
+  resetReflection(matchId, forcedType);
   setView("reflection");
 }
 
@@ -3676,6 +3681,7 @@ function reflectionActions(nextLabel = "다음") {
 function buildSelfReflection(id) {
   const position = reflectionPosition || "free";
   const quick = reflectionType === "quick";
+  qaLog("buildSelfReflection", { id, matchId: reflectionMatchId, reflectionType, quick });
   return {
     id,
     userId: currentUserId,
@@ -3708,18 +3714,21 @@ function renderReflection() {
         <p class="eyebrow purple">개인 회고 카드</p>
         <h2>회고 히스토리</h2>
         <p>내가 생각한 나를 최신순으로 모아봅니다.</p>
-        <button class="primary full" data-start-reflection-form type="button">회고 작성하기</button>
+        <button class="primary full" data-start-reflection-form data-reflection-start-type="official" type="button">일반 회고 작성하기</button>
+        <button class="secondary full" data-start-reflection-form data-reflection-start-type="quick" type="button">퀵 회고 작성하기</button>
       </div>
       <div class="reflection-history list-mode" id="reflectionHistory"></div>
     `;
     renderReflectionHistory();
-    card.querySelector("[data-start-reflection-form]")?.addEventListener("click", () => startReflection(null));
+    card.querySelectorAll("[data-start-reflection-form]").forEach((button) => {
+      button.addEventListener("click", () => startReflection(null, button.dataset.reflectionStartType === "quick" ? "quick" : "official"));
+    });
     return;
   }
   card.innerHTML = `
     <p class="eyebrow purple">개인 회고 카드</p>
     <h2>내가 생각한 나</h2>
-    <p>공식 선수카드와 분리된 자가 기록입니다.</p>
+    <p>${reflectionType === "quick" ? "퀵 카드와 분리해 저장되는 퀵 자기회고입니다." : "공식 선수카드와 분리된 자가 기록입니다."}</p>
     <p id="reflectionContext">빠른 회고 · 경기 연결 없음</p>
     <h2 id="reflectionStepTitle">포지션 선택</h2>
     <p id="reflectionStepHelp">오늘 내가 수행한 역할을 선택해주세요.</p>
@@ -3729,7 +3738,8 @@ function renderReflection() {
   document.querySelector("#reflectionContext").textContent = reflectionMatchId
     ? `${reflectionType === "quick" ? "퀵 회고" : "경기 후 회고"} · 현재 경기와 연결됨`
     : "빠른 회고 · 경기 연결 없음";
-  document.querySelector("#reflectionStepTitle").textContent = reflectionSteps[reflectionStep] || "저장 완료";
+  const quickReflectionStepTitles = ["포지션 선택", "퀵 공통 자가평가", "포지션 수행도", "플레이유형 선택", "개인 회고"];
+  document.querySelector("#reflectionStepTitle").textContent = (reflectionType === "quick" ? quickReflectionStepTitles : reflectionSteps)[reflectionStep] || "저장 완료";
   document.querySelector("#reflectionStepHelp").textContent = reflectionStep === 4
     ? "짧게 남겨도 충분해요. 다음 경기의 나에게 보내는 메모입니다."
     : "내가 느낀 플레이를 가볍게 체크해주세요. 공식 카드에는 섞이지 않습니다.";
@@ -3843,7 +3853,7 @@ function renderReflection() {
 }
 
 function renderSelfRatingFields(fields, category, ratings) {
-  return fields.map((field) => `<article class="rating-card ${Number.isFinite(ratings[field.key]) ? "selected" : ""}"><div class="rating-copy"><strong>${field.label}</strong><small>${field.description}</small></div><div class="rating-picks" role="group" aria-label="${field.label} 자가 평가">${Array.from({ length: 10 }, (_, index) => index + 1).map((value) => `<button class="${value === ratings[field.key] ? "selected" : ""}" data-self-rating-category="${category}" data-self-rating-key="${field.key}" data-self-rating-value="${value}" type="button">${value}</button>`).join("")}</div></article>`).join("");
+  return fields.map((field) => `<article class="rating-card ${Number.isFinite(ratings[field.key]) ? "selected" : ""}"><div class="rating-copy"><strong>${field.label}</strong><small>${field.description || "퀵 평가 기준"}</small></div><div class="rating-picks" role="group" aria-label="${field.label} 자가 평가">${Array.from({ length: 10 }, (_, index) => index + 1).map((value) => `<button class="${value === ratings[field.key] ? "selected" : ""}" data-self-rating-category="${category}" data-self-rating-key="${field.key}" data-self-rating-value="${value}" type="button">${value}</button>`).join("")}</div></article>`).join("");
 }
 
 function renderReflectionHistory() {
@@ -4265,6 +4275,14 @@ function renderCards() {
       : "공식 경기는 OVR과 현재폼에 반영됩니다.";
   }
   const list = document.querySelector("#cardList");
+  qaLog("renderCards", {
+    activeCardTab,
+    activeCardScope,
+    officialMatchCount: userMatchCards().length,
+    officialMonthlyCount: userMonthlyCards().length,
+    quickMatchCount: quickMatchCardsForUser().length,
+    quickMonthlyCount: quickMonthlyCardsForUser().length,
+  });
   if (activeCardTab === "monthly") {
     const monthlyCards = visibleMonthlyCards();
     list.innerHTML = monthlyCards.length
@@ -4462,12 +4480,14 @@ function bindInteractions() {
     const tabButton = event.target.closest("[data-card-tab]");
     if (tabButton) {
       activeCardTab = tabButton.dataset.cardTab === "monthly" ? "monthly" : "match";
+      qaLog("cardTabClick", { activeCardTab, activeCardScope });
       renderCards();
       return;
     }
     const scopeButton = event.target.closest("[data-card-scope]");
     if (!scopeButton) return;
     activeCardScope = scopeButton.dataset.cardScope === "quick" ? "quick" : "official";
+    qaLog("cardScopeClick", { activeCardTab, activeCardScope });
     renderCards();
   });
   document.querySelector("#officialCard")?.addEventListener("click", () => {
