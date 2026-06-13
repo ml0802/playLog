@@ -3984,7 +3984,7 @@ function renderReflectionHistory() {
         const positionText = positionLabels[item.selectedPosition]?.[0] || item.selectedPosition || "-";
         const summary = item.nextGoal || item.memo || "아직 다음 목표를 정리하지 않았어요.";
         const selected = selectedReflectionIds.has(item.id);
-        return `<article class="reflection-history-card ${reflectionSelectionMode ? "selectable" : ""} ${selected ? "selected" : ""}" data-reflection-card="${item.id}"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span>${matchText}</span></div><p>${escapeHtml(summary)}</p></button>${reflectionSelectionMode ? `<span class="reflection-check" aria-hidden="true">${selected ? "✓" : ""}</span>` : ""}</article>`;
+        return `<article class="reflection-history-card ${reflectionSelectionMode ? "selectable" : ""} ${selected ? "selected" : ""}" data-reflection-card="${item.id}"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span class="reflection-kind ${item.reflectionType === "quick" ? "quick" : "official"}">${matchText}</span></div><p>${escapeHtml(summary)}</p></button>${reflectionSelectionMode ? `<span class="reflection-check" aria-hidden="true">${selected ? "✓" : ""}</span>` : ""}</article>`;
       }).join("")}
     </div>
   `;
@@ -3992,12 +3992,14 @@ function renderReflectionHistory() {
   history.querySelector("[data-reflection-selection-cancel]")?.addEventListener("click", exitReflectionSelectionMode);
   history.querySelector("[data-reflection-delete-selected]")?.addEventListener("click", () => openReflectionDeleteConfirm([...selectedReflectionIds]));
   history.querySelectorAll("[data-reflection-detail]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
       if (suppressReflectionDetailClickId === button.dataset.reflectionDetail) {
         suppressReflectionDetailClickId = null;
         return;
       }
       if (reflectionSelectionMode) {
+        event.preventDefault();
+        event.stopPropagation();
         toggleReflectionSelection(button.dataset.reflectionDetail);
         return;
       }
@@ -4010,6 +4012,12 @@ function renderReflectionHistory() {
       clearTimeout(longPressTimer);
       longPressTimer = null;
     };
+    card.addEventListener("click", (event) => {
+      if (!reflectionSelectionMode) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleReflectionSelection(card.dataset.reflectionCard);
+    });
     card.addEventListener("pointerdown", () => {
       clearLongPress();
       longPressTimer = setTimeout(() => {
