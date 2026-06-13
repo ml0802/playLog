@@ -202,6 +202,9 @@ let matchResultMode = "summary";
 let matchResultSelectedCard = null;
 let evaluationMode = "list";
 let reflectionMode = "list";
+let reflectionSelectionMode = false;
+let selectedReflectionIds = new Set();
+let suppressReflectionDetailClickId = null;
 let newMatchDraft = null;
 let authMode = "landing";
 let selectedFriendProfileId = null;
@@ -3936,6 +3939,25 @@ function removeSelfReflectionFromLocal(reflection) {
   if (index >= 0) collection.splice(index, 1);
 }
 
+function enterReflectionSelectionMode(reflectionId) {
+  reflectionSelectionMode = true;
+  if (reflectionId) selectedReflectionIds.add(reflectionId);
+  renderReflectionHistory();
+}
+
+function exitReflectionSelectionMode() {
+  reflectionSelectionMode = false;
+  selectedReflectionIds = new Set();
+  renderReflectionHistory();
+}
+
+function toggleReflectionSelection(reflectionId) {
+  if (selectedReflectionIds.has(reflectionId)) selectedReflectionIds.delete(reflectionId);
+  else selectedReflectionIds.add(reflectionId);
+  if (!selectedReflectionIds.size) reflectionSelectionMode = false;
+  renderReflectionHistory();
+}
+
 function renderReflectionHistory() {
   const history = document.querySelector("#reflectionHistory");
   if (!history) return;
@@ -3943,32 +3965,85 @@ function renderReflectionHistory() {
     .filter((item) => item.userId === currentUserId)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   if (!reflections.length) {
+    reflectionSelectionMode = false;
+    selectedReflectionIds = new Set();
     history.innerHTML = `<h3>회고 히스토리</h3><p>아직 저장된 개인 회고가 없습니다.</p>`;
     return;
   }
+  selectedReflectionIds = new Set([...selectedReflectionIds].filter((id) => reflections.some((item) => item.id === id)));
+  if (!selectedReflectionIds.size) reflectionSelectionMode = false;
   history.innerHTML = `
-    <h3>회고 히스토리</h3>
+    <div class="reflection-history-head">
+      <h3>회고 히스토리</h3>
+      ${reflectionSelectionMode
+        ? `<div class="reflection-selection-actions"><button class="secondary compact" data-reflection-selection-cancel type="button">취소</button><button class="primary danger compact" data-reflection-delete-selected type="button" ${selectedReflectionIds.size ? "" : "disabled"}>삭제</button></div>`
+        : ""}
+    </div>
     <div class="reflection-history-list">
       ${reflections.map((item) => {
         const date = new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" });
         const matchText = item.reflectionType === "quick" ? "퀵 회고" : item.matchId ? "경기 연결" : "빠른 회고";
         const positionText = positionLabels[item.selectedPosition]?.[0] || item.selectedPosition || "-";
         const summary = item.nextGoal || item.memo || "아직 다음 목표를 정리하지 않았어요.";
-        return `<article class="reflection-history-card"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span>${matchText}</span></div><p>${escapeHtml(summary)}</p></button><button class="reflection-delete-button" data-reflection-delete="${item.id}" type="button" aria-label="회고 삭제">삭제</button></article>`;
+        const selected = selectedReflectionIds.has(item.id);
+        return `<article class="reflection-history-card ${reflectionSelectionMode ? "selectable" : ""} ${selected ? "selected" : ""}" data-reflection-card="${item.id}"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span>${matchText}</span></div><p>${escapeHtml(summary)}</p></button>${reflectionSelectionMode ? `<span class="reflection-check" aria-hidden="true">${selected ? "✓" : ""}</span>` : `<button class="reflection-select-button" data-reflection-select-start="${item.id}" type="button" aria-label="회고 선택">선택</button>`}</article>`;
       }).join("")}
     </div>
   `;
+  history.querySelector("[data-reflection-selection-cancel]")?.addEventListener("click", exitReflectionSelectionMode);
+  history.querySelector("[data-reflection-delete-selected]")?.addEventListener("click", () => openReflectionDeleteConfirm([...selectedReflectionIds]));
   history.querySelectorAll("[data-reflection-detail]").forEach((button) => {
-    button.addEventListener("click", () => openReflectionDetail(button.dataset.reflectionDetail));
+    button.addEventListener("click", () => {
+      if (suppressReflectionDetailClickId === button.dataset.reflectionDetail) {
+        suppressReflectionDetailClickId = null;
+        return;
+      }
+      if (reflectionSelectionMode) {
+        toggleReflectionSelection(button.dataset.reflectionDetail);
+        return;
+      }
+      openReflectionDetail(button.dataset.reflectionDetail);
+    });
   });
-  history.querySelectorAll("[data-reflection-delete]").forEach((button) => {
-    button.addEventListener("click", () => openReflectionDeleteConfirm(button.dataset.reflectionDelete));
+  history.querySelectorAll("[data-reflection-select-start]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      enterReflectionSelectionMode(button.dataset.reflectionSelectStart);
+    });
+  });
+  history.querySelectorAll("[data-reflection-card]").forEach((card) => {
+    let longPressTimer = null;
+    const clearLongPress = () => {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    };
+    card.addEventListener("pointerdown", () => {
+      clearLongPress();
+      longPressTimer = setTimeout(() => {
+        suppressReflectionDetailClickId = card.dataset.reflectionCard;
+        enterReflectionSelectionMode(card.dataset.reflectionCard);
+      }, 550);
+    });
+    card.addEventListener("pointerup", clearLongPress);
+    card.addEventListener("pointerleave", clearLongPress);
+    card.addEventListener("pointercancel", clearLongPress);
+    card.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      enterReflectionSelectionMode(card.dataset.reflectionCard);
+    });
+  });
+  history.querySelector(".reflection-history-list")?.addEventListener("click", (event) => {
+    if (reflectionSelectionMode && event.target.classList.contains("reflection-history-list")) exitReflectionSelectionMode();
+  });
+  history.addEventListener("click", (event) => {
+    if (reflectionSelectionMode && event.target === history) exitReflectionSelectionMode();
   });
 }
 
-function openReflectionDeleteConfirm(reflectionId) {
-  const reflection = selfReflectionById(reflectionId);
-  if (!reflection) return;
+function openReflectionDeleteConfirm(reflectionIds) {
+  const ids = Array.isArray(reflectionIds) ? reflectionIds : [reflectionIds];
+  const reflections = ids.map(selfReflectionById).filter(Boolean);
+  if (!reflections.length) return;
   const overlay = document.querySelector("#overlay");
   const sheet = document.querySelector("#sheet");
   sheet.className = "sheet reflection-delete-sheet";
@@ -3977,21 +4052,23 @@ function openReflectionDeleteConfirm(reflectionId) {
       <h3>회고 삭제</h3>
       <button data-close-sheet type="button" aria-label="회고 삭제 닫기">×</button>
     </div>
-    <p class="delete-confirm-copy">이 회고를 삭제할까요? 삭제 후 복구할 수 없습니다.</p>
+    <p class="delete-confirm-copy">선택한 회고를 삭제할까요? 삭제 후 복구할 수 없습니다.</p>
     <div class="eval-actions">
       <button class="secondary" data-close-sheet type="button">취소</button>
-      <button class="primary danger" data-confirm-reflection-delete="${reflection.id}" type="button">삭제</button>
+      <button class="primary danger" data-confirm-reflection-delete type="button">삭제</button>
     </div>
   `;
   sheet.querySelectorAll("[data-close-sheet]").forEach((button) => button.addEventListener("click", closeSheet));
   sheet.querySelector("[data-confirm-reflection-delete]")?.addEventListener("click", async () => {
     try {
-      await deleteSelfReflectionAsync(reflection);
+      await Promise.all(reflections.map((reflection) => deleteSelfReflectionAsync(reflection)));
     } catch (error) {
       reportSupabaseError(error, "Supabase 회고 삭제 실패");
       return;
     }
-    removeSelfReflectionFromLocal(reflection);
+    reflections.forEach(removeSelfReflectionFromLocal);
+    reflectionSelectionMode = false;
+    selectedReflectionIds = new Set();
     closeSheet();
     renderReflectionHistory();
     showToast("회고를 삭제했습니다.");
