@@ -3377,10 +3377,14 @@ function renderEvaluation() {
       ? "평가 저장 완료"
       : quick && currentStep === 4
         ? "플레이유형 선택"
+        : !quick && currentStep === 4
+          ? "선택 평가 (스킵 가능)"
         : flowSteps[currentStep];
   document.querySelector("#stepHelp").textContent = isAwardStep
     ? "두 선택은 OVR에 영향 없이 결과 공개 때 함께 보여집니다."
-    : currentStep === 2 ? "평균은 6점입니다." : quick ? "퀵 평가는 퀵 카드에만 반영됩니다." : "공식 선수카드는 동료 평가만 반영합니다.";
+    : !quick && currentStep === 4
+      ? "플레이유형을 더 정확하게 분석하기 위한 선택 평가입니다."
+      : currentStep === 2 ? "평균은 6점입니다." : quick ? "퀵 평가는 퀵 카드에만 반영됩니다." : "공식 선수카드는 동료 평가만 반영합니다.";
   renderStepper();
 
   const pane = document.querySelector("#evaluationPane");
@@ -3411,7 +3415,6 @@ function renderEvaluation() {
       ? `<h3 class="eval-subtitle">플레이유형 선택 <small>포지션별 1개 선택</small></h3>${renderQuickEvaluationPlayTypes(selectedPosition)}${actions()}`
       : `
         <h3 class="eval-subtitle">플레이 성향 <small>선택 입력 · 1~10점</small></h3>
-        <p class="analysis-note">플레이유형을 더 정확하게 분석하기 위한 선택 평가입니다.<br>선택사항이며 건너뛰어도 괜찮습니다.</p>
         <div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, selectedTraits, traitScores, "trait")}</div>
         <h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3>
         <div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${selectedHighlights.includes(field.key) ? "selected" : ""}" data-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>
