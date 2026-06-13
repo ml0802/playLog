@@ -679,8 +679,7 @@ function signupRoleOptionsHtml(positionKey, selectedRole = "") {
 }
 
 function isCurrentUserApproved() {
-  if (!Array.isArray(window.PlaylogOfficialData?.users)) return true;
-  return appUser(currentUserId)?.status === "approved";
+  return Boolean(currentUserId && appUser(currentUserId)?.status === "approved");
 }
 
 function isRookieDemoSessionUser(userId = currentUserId) {
@@ -2238,7 +2237,7 @@ function participantStrengthTags(card, limit = 3) {
   return (card.strengthsTop3 || []).slice(0, limit).map(analysisItemLabel);
 }
 
-function largeCardShell({ type, name = "승현", preset = currentAvatarPreset(), kicker, title, subtitle, playStyle, playStyleCode, ovr, change, positionCode, radarData, tags, basis, detailLabel, detailKind, payloadKey, allowDetail = true, showHeader = true }) {
+function largeCardShell({ type, name = "루키", preset = currentAvatarPreset(), kicker, title, subtitle, playStyle, playStyleCode, ovr, change, positionCode, radarData, tags, basis, detailLabel, detailKind, payloadKey, allowDetail = true, showHeader = true }) {
   return `
     ${showHeader ? `<div class="result-title">
       <h3>${type}</h3>
@@ -3111,6 +3110,7 @@ function applyAvatarPreset() {
 }
 
 function renderHome() {
+  if (!isCurrentUserApproved()) return;
   const stats = currentHomeStats();
   const analysisCard = currentFormAnalysisCard();
   const monthlyCard = latestHomeMonthlyCard();
@@ -4660,6 +4660,7 @@ function renderFriends() {
 }
 
 function setView(view) {
+  if (view !== "auth" && !isCurrentUserApproved()) view = "auth";
   document.querySelectorAll(".content-view").forEach((section) => section.classList.toggle("active", section.dataset.view === view));
   document.querySelectorAll(".tabbar button").forEach((button) => button.classList.toggle("active", button.dataset.go === view));
   document.querySelector(".hero").hidden = view !== "home";
@@ -4814,13 +4815,5 @@ bindInteractions();
 (async function initializeApp() {
   const restored = await restoreSavedLogin();
   if (restored) return;
-  if (isCurrentUserApproved()) {
-    renderHome();
-    renderEvaluation();
-    renderReflection();
-    renderCards();
-    renderFriends();
-  } else {
-    setView("auth");
-  }
+  setView("auth");
 })();
