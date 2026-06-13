@@ -13,11 +13,15 @@ function officialData() {
   window.PlaylogOfficialData.friends = window.PlaylogOfficialData.friends || [];
   window.PlaylogOfficialData.matches = window.PlaylogOfficialData.matches || [];
   window.PlaylogOfficialData.evaluations = window.PlaylogOfficialData.evaluations || [];
+  window.PlaylogOfficialData.quickEvaluations = window.PlaylogOfficialData.quickEvaluations || [];
   window.PlaylogOfficialData.playerMatchCards = window.PlaylogOfficialData.playerMatchCards || [];
+  window.PlaylogOfficialData.quickPlayerMatchCards = window.PlaylogOfficialData.quickPlayerMatchCards || [];
   window.PlaylogOfficialData.playerCurrentStats = window.PlaylogOfficialData.playerCurrentStats || [];
   window.PlaylogOfficialData.playerMonthlyCards = window.PlaylogOfficialData.playerMonthlyCards || [];
+  window.PlaylogOfficialData.quickPlayerMonthlyCards = window.PlaylogOfficialData.quickPlayerMonthlyCards || [];
   window.PlaylogOfficialData.matchAwardVotes = window.PlaylogOfficialData.matchAwardVotes || [];
   window.PlaylogOfficialData.selfReflections = window.PlaylogOfficialData.selfReflections || [];
+  window.PlaylogOfficialData.quickSelfReflections = window.PlaylogOfficialData.quickSelfReflections || [];
   return window.PlaylogOfficialData;
 }
 
@@ -108,6 +112,7 @@ function fromMatchRow(row, participantRows = []) {
     evaluationDeadlineHours: row.evaluation_deadline_hours || 12,
     evaluationDeadlineAt: row.evaluation_deadline_at,
     awardVotingEnabled: row.award_voting_enabled !== false,
+    matchType: row.match_type === "quick" ? "quick" : "official",
     status: row.status || "evaluating",
     publishedAt: row.published_at,
     createdAt: row.created_at,
@@ -126,6 +131,7 @@ function toMatchRow(match) {
     award_voting_enabled: typeof match.awardVotingEnabled === "boolean"
       ? match.awardVotingEnabled
       : normalizeMatchParticipants(match).length >= 4,
+    match_type: match.matchType === "quick" || match.match_type === "quick" ? "quick" : "official",
     status: match.status || "evaluating",
     published_at: match.publishedAt || null,
     created_at: match.createdAt || new Date().toISOString(),
@@ -196,6 +202,7 @@ function fromSelfReflectionRow(row) {
     feltWeakness: row.felt_weakness || "",
     nextGoal: row.next_goal || "",
     memo: row.memo || "",
+    reflectionType: row.reflection_type || "official",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -216,6 +223,7 @@ function toSelfReflectionRow(reflection) {
     felt_weakness: reflection.feltWeakness || "",
     next_goal: reflection.nextGoal || "",
     memo: reflection.memo || "",
+    reflection_type: reflection.reflectionType === "quick" ? "quick" : "official",
     created_at: reflection.createdAt || now,
     updated_at: reflection.updatedAt || now,
   };
@@ -253,6 +261,48 @@ function toEvaluationRow(evaluation, { isActive = evaluation.isActive !== false,
     is_active: isActive,
     created_at: evaluation.createdAt || timestamp,
     updated_at: timestamp,
+  };
+}
+
+function isQuickMatch(matchId) {
+  return officialData().matches.find((match) => match.id === matchId)?.matchType === "quick";
+}
+
+function evaluationTablesFor(matchType = "official") {
+  const quick = matchType === "quick";
+  return {
+    evaluations: quick ? "quick_evaluations" : "evaluations",
+    scores: quick ? "quick_evaluation_scores" : "evaluation_scores",
+    traits: quick ? "quick_evaluation_traits" : "evaluation_traits",
+    highlights: quick ? "quick_evaluation_highlights" : "evaluation_highlights",
+    dataKey: quick ? "quickEvaluations" : "evaluations",
+  };
+}
+
+function cardTablesFor(matchType = "official") {
+  const quick = matchType === "quick";
+  return {
+    matchCards: quick ? "quick_player_match_cards" : "player_match_cards",
+    monthlyCards: quick ? "quick_player_monthly_cards" : "player_monthly_cards",
+    matchKey: quick ? "quickPlayerMatchCards" : "playerMatchCards",
+    monthlyKey: quick ? "quickPlayerMonthlyCards" : "playerMonthlyCards",
+  };
+}
+
+function quickScoresFromExpandedScores(scores = [], selectedPosition = "free") {
+  const scoreFor = (key) => scores.find((score) => score.key === key)?.score;
+  const averageValues = (keys) => {
+    const values = keys.map(scoreFor).filter((value) => Number.isFinite(value));
+    return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null;
+  };
+  const positionKeys = window.PlaylogEngine?.EVALUATION_FIELDS?.position?.[selectedPosition] || [];
+  return {
+    activity: averageValues(["activity", "stamina"]),
+    pass: averageValues(["stablePass", "buildUp"]),
+    ballControl: averageValues(["firstTouch", "dribbleImpact"]),
+    decision: averageValues(["decision", "composure"]),
+    gameUnderstanding: averageValues(["offTheBall", "concentration"]),
+    positionPerformance: averageValues(positionKeys.map((field) => field.key)),
   };
 }
 
@@ -492,19 +542,21 @@ function mergeMatches(matches = []) {
   });
 }
 
-function replaceEvaluationsForMatches(matchIds = [], evaluations = []) {
+function replaceEvaluationsForMatches(matchIds = [], evaluations = [], matchType = "official") {
   const data = officialData();
   const matchIdSet = new Set(matchIds);
-  for (let index = data.evaluations.length - 1; index >= 0; index -= 1) {
-    if (matchIdSet.has(data.evaluations[index].matchId)) data.evaluations.splice(index, 1);
+  const collection = matchType === "quick" ? data.quickEvaluations : data.evaluations;
+  for (let index = collection.length - 1; index >= 0; index -= 1) {
+    if (matchIdSet.has(collection[index].matchId)) collection.splice(index, 1);
   }
-  evaluations.filter(Boolean).forEach((evaluation) => data.evaluations.push(evaluation));
+  evaluations.filter(Boolean).forEach((evaluation) => collection.push(evaluation));
 }
 
 function mergeEvaluations(evaluations = []) {
   const data = officialData();
   evaluations.filter(Boolean).forEach((evaluation) => {
-    const sameSubmission = data.evaluations.filter((item) =>
+    const collection = evaluation.evaluationType === "quick" ? data.quickEvaluations : data.evaluations;
+    const sameSubmission = collection.filter((item) =>
       item.matchId === evaluation.matchId
       && item.evaluatorUserId === evaluation.evaluatorUserId
       && item.targetUserId === evaluation.targetUserId,
@@ -512,9 +564,9 @@ function mergeEvaluations(evaluations = []) {
     sameSubmission
       .filter((item) => item.id !== evaluation.id && item.isActive !== false)
       .forEach((item) => { item.isActive = false; item.updatedAt = evaluation.updatedAt; });
-    const index = data.evaluations.findIndex((item) => item.id === evaluation.id);
-    if (index >= 0) data.evaluations[index] = { ...data.evaluations[index], ...evaluation };
-    else data.evaluations.push(evaluation);
+    const index = collection.findIndex((item) => item.id === evaluation.id);
+    if (index >= 0) collection[index] = { ...collection[index], ...evaluation };
+    else collection.push(evaluation);
   });
 }
 
@@ -540,24 +592,26 @@ function mergeAwardVotes(votes = []) {
   });
 }
 
-function replaceSelfReflectionsForUser(userId, reflections = []) {
+function replaceSelfReflectionsForUser(userId, reflections = [], matchType = "official") {
   const data = officialData();
-  for (let index = data.selfReflections.length - 1; index >= 0; index -= 1) {
-    if (data.selfReflections[index]?.userId === userId) data.selfReflections.splice(index, 1);
+  const collection = matchType === "quick" ? data.quickSelfReflections : data.selfReflections;
+  for (let index = collection.length - 1; index >= 0; index -= 1) {
+    if (collection[index]?.userId === userId) collection.splice(index, 1);
   }
-  reflections.filter(Boolean).forEach((reflection) => data.selfReflections.push(reflection));
+  reflections.filter(Boolean).forEach((reflection) => collection.push(reflection));
 }
 
 function mergeSelfReflections(reflections = []) {
   const data = officialData();
   reflections.filter(Boolean).forEach((reflection) => {
-    const index = data.selfReflections.findIndex((item) => item.id === reflection.id);
-    if (index >= 0) data.selfReflections[index] = { ...data.selfReflections[index], ...reflection };
-    else data.selfReflections.push(reflection);
+    const collection = reflection.reflectionType === "quick" ? data.quickSelfReflections : data.selfReflections;
+    const index = collection.findIndex((item) => item.id === reflection.id);
+    if (index >= 0) collection[index] = { ...collection[index], ...reflection };
+    else collection.push(reflection);
   });
 }
 
-function replaceCardsForUsers(userIds = [], { matchCards = [], currentStats = [], monthlyCards = [] } = {}) {
+function replaceCardsForUsers(userIds = [], { matchCards = [], currentStats = [], monthlyCards = [], quickMatchCards = [], quickMonthlyCards = [] } = {}) {
   const data = officialData();
   const userIdSet = new Set(userIds);
   const pruneByUser = (collection) => {
@@ -567,19 +621,24 @@ function replaceCardsForUsers(userIds = [], { matchCards = [], currentStats = []
     }
   };
   pruneByUser(data.playerMatchCards);
+  pruneByUser(data.quickPlayerMatchCards);
   pruneByUser(data.playerCurrentStats);
   pruneByUser(data.playerMonthlyCards);
+  pruneByUser(data.quickPlayerMonthlyCards);
   matchCards.filter(Boolean).forEach((card) => data.playerMatchCards.push(card));
+  quickMatchCards.filter(Boolean).forEach((card) => data.quickPlayerMatchCards.push(card));
   currentStats.filter(Boolean).forEach((stats) => data.playerCurrentStats.push(stats));
   monthlyCards.filter(Boolean).forEach((card) => data.playerMonthlyCards.push(card));
+  quickMonthlyCards.filter(Boolean).forEach((card) => data.quickPlayerMonthlyCards.push(card));
 }
 
-function mergePlayerMatchCards(cards = []) {
+function mergePlayerMatchCards(cards = [], matchType = "official") {
   const data = officialData();
+  const collection = matchType === "quick" ? data.quickPlayerMatchCards : data.playerMatchCards;
   cards.filter(Boolean).forEach((card) => {
-    const index = data.playerMatchCards.findIndex((item) => item.id === card.id);
-    if (index >= 0) data.playerMatchCards[index] = { ...data.playerMatchCards[index], ...card };
-    else data.playerMatchCards.push(card);
+    const index = collection.findIndex((item) => item.id === card.id);
+    if (index >= 0) collection[index] = { ...collection[index], ...card };
+    else collection.push(card);
   });
 }
 
@@ -592,14 +651,15 @@ function mergePlayerCurrentStats(statsItems = []) {
   });
 }
 
-function mergePlayerMonthlyCards(cards = []) {
+function mergePlayerMonthlyCards(cards = [], matchType = "official") {
   const data = officialData();
+  const collection = matchType === "quick" ? data.quickPlayerMonthlyCards : data.playerMonthlyCards;
   cards.filter(Boolean).forEach((card) => {
-    const index = data.playerMonthlyCards.findIndex((item) =>
+    const index = collection.findIndex((item) =>
       item.userId === card.userId && item.monthKey === card.monthKey,
     );
-    if (index >= 0) data.playerMonthlyCards[index] = { ...data.playerMonthlyCards[index], ...card };
-    else data.playerMonthlyCards.push(card);
+    if (index >= 0) collection[index] = { ...collection[index], ...card };
+    else collection.push(card);
   });
 }
 
@@ -795,6 +855,7 @@ async function updateMatchParticipantCompletion(matchId, userId, evaluationCompl
 
 async function recalculateMatchEvaluationCompletion(matchId) {
   assertClient();
+  const tables = evaluationTablesFor(isQuickMatch(matchId) ? "quick" : "official");
   const { data: participantRows, error: participantsError } = await supabase
     .from("match_participants")
     .select("*")
@@ -808,7 +869,7 @@ async function recalculateMatchEvaluationCompletion(matchId) {
   const expectedActiveEvaluationCount = participantUserIds.length * Math.max(participantUserIds.length - 1, 0);
 
   const { data: activeEvaluationRows, error: evaluationsError } = await supabase
-    .from("evaluations")
+    .from(tables.evaluations)
     .select("evaluator_user_id,target_user_id")
     .eq("match_id", matchId)
     .eq("is_active", true);
@@ -919,47 +980,73 @@ async function refreshEvaluations(userId) {
   const matchIds = [...new Set((participantRows || []).map((participant) => participant.match_id).filter(Boolean))];
   if (!matchIds.length) {
     replaceEvaluationsForMatches([], []);
+    replaceEvaluationsForMatches([], [], "quick");
     return [];
   }
+  const matchTypes = Object.fromEntries((officialData().matches || [])
+    .filter((match) => matchIds.includes(match.id))
+    .map((match) => [match.id, match.matchType === "quick" ? "quick" : "official"]));
+  const officialMatchIds = matchIds.filter((matchId) => (matchTypes[matchId] || "official") !== "quick");
+  const quickMatchIds = matchIds.filter((matchId) => (matchTypes[matchId] || "official") === "quick");
 
-  const { data: evaluationRows, error: evaluationsError } = await supabase
-    .from("evaluations")
-    .select("*")
-    .in("match_id", matchIds);
-  if (evaluationsError) throw evaluationsError;
-  const evaluationIds = (evaluationRows || []).map((evaluation) => evaluation.id);
-  if (!evaluationIds.length) {
-    replaceEvaluationsForMatches(matchIds, []);
-    return [];
+  async function fetchEvaluationsFor(matchType, ids) {
+    if (!ids.length) {
+      replaceEvaluationsForMatches([], [], matchType);
+      return [];
+    }
+    const tables = evaluationTablesFor(matchType);
+    const { data: evaluationRows, error: evaluationsError } = await supabase
+      .from(tables.evaluations)
+      .select("*")
+      .in("match_id", ids);
+    if (evaluationsError) throw evaluationsError;
+    const evaluationIds = (evaluationRows || []).map((evaluation) => evaluation.id);
+    if (!evaluationIds.length) {
+      replaceEvaluationsForMatches(ids, [], matchType);
+      return [];
+    }
+
+    const { data: scoreRows, error: scoresError } = await supabase
+      .from(tables.scores)
+      .select("*")
+      .in("evaluation_id", evaluationIds);
+    if (scoresError) throw scoresError;
+    const { data: traitRows, error: traitsError } = await supabase
+      .from(tables.traits)
+      .select("*")
+      .in("evaluation_id", evaluationIds);
+    if (traitsError) throw traitsError;
+    const { data: highlightRows, error: highlightsError } = await supabase
+      .from(tables.highlights)
+      .select("*")
+      .in("evaluation_id", evaluationIds);
+    if (highlightsError) throw highlightsError;
+
+    const evaluations = (evaluationRows || []).map((row) => {
+      const evaluation = fromEvaluationRow(row, scoreRows || [], traitRows || [], highlightRows || []);
+      return {
+        ...evaluation,
+        evaluationType: matchType,
+        quickScores: matchType === "quick" ? quickScoresFromExpandedScores(evaluation.scores, evaluation.selectedPosition) : undefined,
+      };
+    });
+    replaceEvaluationsForMatches(ids, evaluations, matchType);
+    return evaluations;
   }
 
-  const { data: scoreRows, error: scoresError } = await supabase
-    .from("evaluation_scores")
-    .select("*")
-    .in("evaluation_id", evaluationIds);
-  if (scoresError) throw scoresError;
-  const { data: traitRows, error: traitsError } = await supabase
-    .from("evaluation_traits")
-    .select("*")
-    .in("evaluation_id", evaluationIds);
-  if (traitsError) throw traitsError;
-  const { data: highlightRows, error: highlightsError } = await supabase
-    .from("evaluation_highlights")
-    .select("*")
-    .in("evaluation_id", evaluationIds);
-  if (highlightsError) throw highlightsError;
-
-  const evaluations = (evaluationRows || []).map((row) =>
-    fromEvaluationRow(row, scoreRows || [], traitRows || [], highlightRows || []),
-  );
-  replaceEvaluationsForMatches(matchIds, evaluations);
-  return evaluations;
+  const [officialEvaluations, quickEvaluations] = await Promise.all([
+    fetchEvaluationsFor("official", officialMatchIds),
+    fetchEvaluationsFor("quick", quickMatchIds),
+  ]);
+  return [...officialEvaluations, ...quickEvaluations];
 }
 
 async function saveEvaluation(evaluation) {
   assertClient();
+  const matchType = isQuickMatch(evaluation.matchId) ? "quick" : "official";
+  const tables = evaluationTablesFor(matchType);
   const { data: sameRows, error: sameRowsError } = await supabase
-    .from("evaluations")
+    .from(tables.evaluations)
     .select("*")
     .eq("match_id", evaluation.matchId)
     .eq("evaluator_user_id", evaluation.evaluatorUserId)
@@ -973,7 +1060,7 @@ async function saveEvaluation(evaluation) {
   const versioned = { ...evaluation, version, isActive: true, updatedAt: timestamp };
 
   const { data: savedEvaluationRow, error: insertEvaluationError } = await supabase
-    .from("evaluations")
+    .from(tables.evaluations)
     .insert(toEvaluationRow(versioned, { isActive: false, version }))
     .select("*");
   if (insertEvaluationError) {
@@ -984,7 +1071,7 @@ async function saveEvaluation(evaluation) {
 
   const scoreRows = toEvaluationScoreRows(versioned);
   if (scoreRows.length) {
-    const { error } = await supabase.from("evaluation_scores").insert(scoreRows);
+    const { error } = await supabase.from(tables.scores).insert(scoreRows);
     if (error) {
       reportSupabaseQueryError("saveEvaluation:insertScores", error);
       throw error;
@@ -992,7 +1079,7 @@ async function saveEvaluation(evaluation) {
   }
   const traitRows = toEvaluationTraitRows(versioned);
   if (traitRows.length) {
-    const { error } = await supabase.from("evaluation_traits").insert(traitRows);
+    const { error } = await supabase.from(tables.traits).insert(traitRows);
     if (error) {
       reportSupabaseQueryError("saveEvaluation:insertTraits", error);
       throw error;
@@ -1000,7 +1087,7 @@ async function saveEvaluation(evaluation) {
   }
   const highlightRows = toEvaluationHighlightRows(versioned);
   if (highlightRows.length) {
-    const { error } = await supabase.from("evaluation_highlights").insert(highlightRows);
+    const { error } = await supabase.from(tables.highlights).insert(highlightRows);
     if (error) {
       reportSupabaseQueryError("saveEvaluation:insertHighlights", error);
       throw error;
@@ -1010,7 +1097,7 @@ async function saveEvaluation(evaluation) {
   const activeIds = (sameRows || []).filter((row) => row.is_active !== false).map((row) => row.id);
   if (activeIds.length) {
     const { error } = await supabase
-      .from("evaluations")
+      .from(tables.evaluations)
       .update({ is_active: false, updated_at: timestamp })
       .in("id", activeIds);
     if (error) {
@@ -1020,7 +1107,7 @@ async function saveEvaluation(evaluation) {
   }
 
   const { data: activatedEvaluationRow, error: activateError } = await supabase
-    .from("evaluations")
+    .from(tables.evaluations)
     .update({ is_active: true, updated_at: timestamp })
     .eq("id", savedEvaluation.id)
     .select("*");
@@ -1029,7 +1116,11 @@ async function saveEvaluation(evaluation) {
     throw activateError;
   }
 
-  const saved = fromEvaluationRow(firstReturnedRow(activatedEvaluationRow, "saveEvaluation:activateCurrent"), scoreRows, traitRows, highlightRows);
+  const saved = {
+    ...fromEvaluationRow(firstReturnedRow(activatedEvaluationRow, "saveEvaluation:activateCurrent"), scoreRows, traitRows, highlightRows),
+    evaluationType: matchType,
+    quickScores: matchType === "quick" ? (evaluation.quickScores || quickScoresFromExpandedScores(scoreRows, evaluation.selectedPosition)) : undefined,
+  };
   mergeEvaluations([saved]);
   return saved;
 }
@@ -1114,15 +1205,27 @@ async function refreshSelfReflections(userId) {
     reportSupabaseQueryError("refreshSelfReflections:selectSelfReflections", error);
     throw error;
   }
+  const { data: quickData, error: quickError } = await supabase
+    .from("quick_self_reflections")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (quickError) {
+    reportSupabaseQueryError("refreshSelfReflections:selectQuickSelfReflections", quickError);
+    throw quickError;
+  }
   const reflections = (data || []).map(fromSelfReflectionRow);
+  const quickReflections = (quickData || []).map((row) => ({ ...fromSelfReflectionRow(row), reflectionType: "quick" }));
   replaceSelfReflectionsForUser(userId, reflections);
-  return reflections;
+  replaceSelfReflectionsForUser(userId, quickReflections, "quick");
+  return [...reflections, ...quickReflections];
 }
 
 async function saveSelfReflection(reflection) {
   assertClient();
+  const table = reflection.reflectionType === "quick" ? "quick_self_reflections" : "self_reflections";
   const { data, error } = await supabase
-    .from("self_reflections")
+    .from(table)
     .upsert(toSelfReflectionRow(reflection), { onConflict: "id" })
     .select("*");
   if (error) {
@@ -1148,7 +1251,13 @@ async function refreshPlayerCards(userId) {
     .select("*")
     .eq("user_id", userId);
   if (ownMatchCardsError) throw ownMatchCardsError;
+  const { data: ownQuickMatchCardRows, error: ownQuickMatchCardsError } = await supabase
+    .from("quick_player_match_cards")
+    .select("*")
+    .eq("user_id", userId);
+  if (ownQuickMatchCardsError) throw ownQuickMatchCardsError;
   let matchCardRows = ownMatchCardRows || [];
+  let quickMatchCardRows = ownQuickMatchCardRows || [];
   if (matchIds.length) {
     const { data: participantMatchCardRows, error: participantMatchCardsError } = await supabase
       .from("player_match_cards")
@@ -1158,9 +1267,21 @@ async function refreshPlayerCards(userId) {
     const rowsById = new Map(matchCardRows.map((row) => [row.id, row]));
     (participantMatchCardRows || []).forEach((row) => rowsById.set(row.id, row));
     matchCardRows = [...rowsById.values()];
+    const { data: participantQuickMatchCardRows, error: participantQuickMatchCardsError } = await supabase
+      .from("quick_player_match_cards")
+      .select("*")
+      .in("match_id", matchIds);
+    if (participantQuickMatchCardsError) throw participantQuickMatchCardsError;
+    const quickRowsById = new Map(quickMatchCardRows.map((row) => [row.id, row]));
+    (participantQuickMatchCardRows || []).forEach((row) => quickRowsById.set(row.id, row));
+    quickMatchCardRows = [...quickRowsById.values()];
   }
 
-  const cardUserIds = [...new Set([userId, ...matchCardRows.map((row) => row.user_id)].filter(Boolean))];
+  const cardUserIds = [...new Set([
+    userId,
+    ...matchCardRows.map((row) => row.user_id),
+    ...quickMatchCardRows.map((row) => row.user_id),
+  ].filter(Boolean))];
   const { data: currentStatsRows, error: currentStatsError } = await supabase
     .from("player_current_stats")
     .select("*")
@@ -1171,23 +1292,32 @@ async function refreshPlayerCards(userId) {
     .select("*")
     .in("user_id", cardUserIds);
   if (monthlyCardsError) throw monthlyCardsError;
+  const { data: quickMonthlyCardRows, error: quickMonthlyCardsError } = await supabase
+    .from("quick_player_monthly_cards")
+    .select("*")
+    .in("user_id", cardUserIds);
+  if (quickMonthlyCardsError) throw quickMonthlyCardsError;
 
   const matchCards = matchCardRows.map(fromPlayerMatchCardRow);
+  const quickMatchCards = quickMatchCardRows.map((row) => ({ ...fromPlayerMatchCardRow(row), cardType: "quick" }));
   const currentStats = (currentStatsRows || []).map(fromPlayerCurrentStatsRow);
   const monthlyCards = (monthlyCardRows || []).map(fromPlayerMonthlyCardRow);
-  replaceCardsForUsers(cardUserIds, { matchCards, currentStats, monthlyCards });
-  return { matchCards, currentStats, monthlyCards };
+  const quickMonthlyCards = (quickMonthlyCardRows || []).map((row) => ({ ...fromPlayerMonthlyCardRow(row), cardType: "quick" }));
+  replaceCardsForUsers(cardUserIds, { matchCards, currentStats, monthlyCards, quickMatchCards, quickMonthlyCards });
+  return { matchCards, currentStats, monthlyCards, quickMatchCards, quickMonthlyCards };
 }
 
 async function upsertGeneratedCards({ matchCard = null, currentStats = null, monthlyCard = null }) {
   assertClient();
+  const matchType = matchCard?.cardType === "quick" || monthlyCard?.cardType === "quick" ? "quick" : "official";
+  const tables = cardTablesFor(matchType);
   let savedMatchCard = null;
   let savedCurrentStats = null;
   let savedMonthlyCard = null;
 
   if (matchCard) {
     const { data, error } = await supabase
-      .from("player_match_cards")
+      .from(tables.matchCards)
       .upsert(toPlayerMatchCardRow(matchCard), { onConflict: "id" })
       .select("*");
     if (error) {
@@ -1211,7 +1341,7 @@ async function upsertGeneratedCards({ matchCard = null, currentStats = null, mon
 
   if (monthlyCard) {
     const { data, error } = await supabase
-      .from("player_monthly_cards")
+      .from(tables.monthlyCards)
       .upsert(toPlayerMonthlyCardRow(monthlyCard), { onConflict: "user_id,month_key" })
       .select("*");
     if (error) {
@@ -1221,9 +1351,9 @@ async function upsertGeneratedCards({ matchCard = null, currentStats = null, mon
     savedMonthlyCard = fromPlayerMonthlyCardRow(firstReturnedRow(data, "upsertGeneratedCards:player_monthly_cards"));
   }
 
-  mergePlayerMatchCards([savedMatchCard]);
+  mergePlayerMatchCards([savedMatchCard], matchType);
   mergePlayerCurrentStats([savedCurrentStats]);
-  mergePlayerMonthlyCards([savedMonthlyCard]);
+  mergePlayerMonthlyCards([savedMonthlyCard], matchType);
   return { matchCard: savedMatchCard, currentStats: savedCurrentStats, monthlyCard: savedMonthlyCard };
 }
 

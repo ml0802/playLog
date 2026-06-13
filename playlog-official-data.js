@@ -9,6 +9,10 @@
   const matchAwardVotes = [];
   const matchAwardTypes = ["pom", "next_star"];
   const selfReflections = [];
+  const quickEvaluations = [];
+  const quickPlayerMatchCards = [];
+  const quickPlayerMonthlyCards = [];
+  const quickSelfReflections = [];
   const testUserFlags = { isTestUser: true, hiddenFromPublicSearch: true };
   const users = [
     { id: "user:admin-ahdfla0802", playlogId: "ahdfla0802", password: "0820", name: "승현", nickname: "승현", status: "approved", role: "admin", mainPosition: "dm", preferredRole: "박스투박스", profilePreset: "cdm-3", bio: "PLAYLOG 운영 관리자", createdAt: "2026-05-30T09:00:00.000Z", approvedAt: "2026-05-30T09:01:00.000Z" },
@@ -269,17 +273,47 @@
     mainPosition: "dm",
   });
 
+  function matchTypeFor(match) {
+    return managedMatch(match)?.matchType || managedMatch(match)?.match_type || "official";
+  }
+
+  function cardCollectionForMatch(match) {
+    return matchTypeFor(match) === "quick" ? quickPlayerMatchCards : playerMatchCards;
+  }
+
+  function evaluationCollectionForMatch(match) {
+    return matchTypeFor(match) === "quick" ? quickEvaluations : evaluations;
+  }
+
+  function monthlyCollectionForMatch(match) {
+    return matchTypeFor(match) === "quick" ? quickPlayerMonthlyCards : playerMonthlyCards;
+  }
+
   function generateCardFor(match, targetUserId, generatedAt) {
+    const cardCollection = cardCollectionForMatch(match);
+    const evaluationCollection = evaluationCollectionForMatch(match);
+    const engineEvaluations = matchTypeFor(match) === "quick"
+      ? engine.expandQuickEvaluations(evaluationCollection)
+      : evaluationCollection;
     const previousCards = playerMatchCards.filter((card) =>
       card && card.userId === targetUserId && card.matchId !== match,
     );
-    return engine.generatePlayerMatchCard({
+    const previousQuickCards = quickPlayerMatchCards.filter((card) =>
+      card && card.userId === targetUserId && card.matchId !== match,
+    );
+    const card = engine.generatePlayerMatchCard({
       matchId: match,
       userId: targetUserId,
-      evaluations,
-      previousCards,
+      evaluations: engineEvaluations,
+      previousCards: matchTypeFor(match) === "quick" ? previousQuickCards : previousCards,
       generatedAt,
     });
+    if (!card) return null;
+    if (matchTypeFor(match) === "quick") {
+      card.id = `quick-player-match-card:${match}:${targetUserId}`;
+      card.cardType = "quick";
+    }
+    return card;
   }
 
   function generateCurrentStatsFor(targetUserId, generatedAt) {
@@ -317,6 +351,28 @@
     return card;
   }
 
+  function generateQuickMonthlyCardFor(targetUserId, monthKey, generatedAt) {
+    const previousMonthlyCard = quickPlayerMonthlyCards
+      .filter((card) => card && card.userId === targetUserId && card.monthKey < monthKey)
+      .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
+    const card = engine.generatePlayerMonthlyCard({
+      userId: targetUserId,
+      monthKey,
+      cards: quickPlayerMatchCards,
+      previousMonthlyCard,
+      generatedAt,
+    });
+    if (!card) return null;
+    card.id = `quick-player-monthly-card:${targetUserId}:${monthKey}`;
+    card.cardType = "quick";
+    const cardIndex = quickPlayerMonthlyCards.findIndex((item) =>
+      item && item.userId === targetUserId && item.monthKey === monthKey,
+    );
+    if (cardIndex >= 0) quickPlayerMonthlyCards[cardIndex] = card;
+    else quickPlayerMonthlyCards.push(card);
+    return card;
+  }
+
   function calculateEvaluationDeadlineAt(matchDate, deadlineHours = 12) {
     const deadline = new Date(matchDate);
     deadline.setTime(deadline.getTime() + deadlineHours * 60 * 60 * 1000);
@@ -330,6 +386,7 @@
     location = "",
     participants = [],
     evaluationDeadlineHours = 12,
+    matchType = "official",
     awardVotingEnabled,
     status = "evaluating",
   }) {
@@ -347,6 +404,7 @@
       date,
       location,
       participants: normalizedParticipants,
+      matchType: matchType === "quick" ? "quick" : "official",
       evaluationDeadlineHours: deadlineHours,
       evaluationDeadlineAt: calculateEvaluationDeadlineAt(date, deadlineHours),
       awardVotingEnabled: typeof awardVotingEnabled === "boolean" ? awardVotingEnabled : normalizedParticipants.length >= 4,
@@ -433,7 +491,7 @@
   }
 
   function activeEvaluationsForMatch(match) {
-    return evaluations.filter((evaluation) =>
+    return evaluationCollectionForMatch(match).filter((evaluation) =>
       evaluation.matchId === match && evaluation.isActive !== false,
     );
   }
@@ -634,6 +692,13 @@
   function upsertOfficialCard(match, targetUserId, generatedAt) {
     const card = generateCardFor(match, targetUserId, generatedAt);
     if (!card) return null;
+    if (matchTypeFor(match) === "quick") {
+      const cardIndex = quickPlayerMatchCards.findIndex((item) => item && item.id === card.id);
+      if (cardIndex >= 0) quickPlayerMatchCards[cardIndex] = card;
+      else quickPlayerMatchCards.push(card);
+      generateQuickMonthlyCardFor(targetUserId, card.generatedAt.slice(0, 7), generatedAt);
+      return card;
+    }
     const cardIndex = playerMatchCards.findIndex((item) => item && item.id === card.id);
     if (cardIndex >= 0) playerMatchCards[cardIndex] = card;
     else playerMatchCards.push(card);
@@ -668,17 +733,18 @@
 
   function saveEvaluation(evaluation) {
     const record = managedMatch(evaluation.matchId);
+    const storage = matchTypeFor(evaluation.matchId) === "quick" ? quickEvaluations : evaluations;
     if (record && !canEditEvaluation(evaluation.matchId)) {
       throw new Error("공개된 경기의 평가는 수정할 수 없습니다.");
     }
-    const storedById = evaluations.find((item) => item.id === evaluation.id);
+    const storedById = storage.find((item) => item.id === evaluation.id);
     if (storedById) {
       if (!record) return generateCardFor(storedById.matchId, storedById.targetUserId, storedById.updatedAt);
       checkAndPublishMatch(storedById.matchId, storedById.updatedAt);
-      return playerMatchCards.find((item) => item && item.matchId === storedById.matchId && item.userId === storedById.targetUserId) || null;
+      return cardCollectionForMatch(storedById.matchId).find((item) => item && item.matchId === storedById.matchId && item.userId === storedById.targetUserId) || null;
     }
 
-    const sameSubmission = evaluations.filter((item) =>
+    const sameSubmission = storage.filter((item) =>
       item.matchId === evaluation.matchId
       && item.evaluatorUserId === evaluation.evaluatorUserId
       && item.targetUserId === evaluation.targetUserId,
@@ -691,22 +757,33 @@
       item.isActive = false;
       item.updatedAt = timestamp;
     });
-    const versionedEvaluation = { ...evaluation, version, isActive: true, updatedAt: timestamp };
-    evaluations.push(versionedEvaluation);
+    const versionedEvaluation = {
+      ...evaluation,
+      evaluationType: matchTypeFor(evaluation.matchId) === "quick" ? "quick" : "official",
+      version,
+      isActive: true,
+      updatedAt: timestamp,
+    };
+    storage.push(versionedEvaluation);
     if (record) {
       markParticipantEvaluationCompleted(versionedEvaluation.matchId, versionedEvaluation.evaluatorUserId);
       checkAndPublishMatch(versionedEvaluation.matchId, versionedEvaluation.updatedAt);
-      return playerMatchCards.find((item) =>
+      return cardCollectionForMatch(versionedEvaluation.matchId).find((item) =>
         item && item.matchId === versionedEvaluation.matchId && item.userId === versionedEvaluation.targetUserId,
       ) || null;
     }
     const card = generateCardFor(versionedEvaluation.matchId, versionedEvaluation.targetUserId, versionedEvaluation.updatedAt);
     if (!card) return null;
-    const cardIndex = playerMatchCards.findIndex((item) => item && item.id === card.id);
-    if (cardIndex >= 0) playerMatchCards[cardIndex] = card;
-    else playerMatchCards.push(card);
-    generateCurrentStatsFor(versionedEvaluation.targetUserId, versionedEvaluation.updatedAt);
-    generateMonthlyCardFor(versionedEvaluation.targetUserId, card.generatedAt.slice(0, 7), versionedEvaluation.updatedAt);
+    const cards = cardCollectionForMatch(versionedEvaluation.matchId);
+    const cardIndex = cards.findIndex((item) => item && item.id === card.id);
+    if (cardIndex >= 0) cards[cardIndex] = card;
+    else cards.push(card);
+    if (matchTypeFor(versionedEvaluation.matchId) === "quick") {
+      generateQuickMonthlyCardFor(versionedEvaluation.targetUserId, card.generatedAt.slice(0, 7), versionedEvaluation.updatedAt);
+    } else {
+      generateCurrentStatsFor(versionedEvaluation.targetUserId, versionedEvaluation.updatedAt);
+      generateMonthlyCardFor(versionedEvaluation.targetUserId, card.generatedAt.slice(0, 7), versionedEvaluation.updatedAt);
+    }
     return card;
   }
 
@@ -943,13 +1020,18 @@
     matchAwardVotes,
     get pomVotes() { return matchAwardVotes.filter((vote) => vote.type === "pom"); },
     evaluations,
+    quickEvaluations,
     playerMatchCards,
+    quickPlayerMatchCards,
     playerCurrentStats,
     playerMonthlyCards,
+    quickPlayerMonthlyCards,
     selfReflections,
+    quickSelfReflections,
     generateCardFor,
     generateCurrentStatsFor,
     generateMonthlyCardFor,
+    generateQuickMonthlyCardFor,
     calculateEvaluationDeadlineAt,
     createMatch,
     addFriend,

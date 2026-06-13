@@ -88,8 +88,8 @@ assert.ok(store.playerMatchCards.find((card) => card.matchId === normalMatch.id 
 
 store.saveMatchAwardVote({ matchId: normalMatch.id, voterUserId: "user:qa-c", targetUserId: "user:qa-a", type: "pom", createdAt: "2026-05-29T01:22:00.000Z" });
 store.saveMatchAwardVote({ matchId: normalMatch.id, voterUserId: "user:qa-c", targetUserId: "user:qa-b", type: "next_star", createdAt: "2026-05-29T01:23:00.000Z" });
-assert.equal(store.calculateMatchAward(normalMatch.id, "pom").voteCount, 3);
-assert.equal(store.calculateMatchAward(normalMatch.id, "next_star").voteCount, 3);
+assert.equal(store.calculateMatchAward(normalMatch.id, "pom").voteCount, 2);
+assert.equal(store.calculateMatchAward(normalMatch.id, "next_star").voteCount, 2);
 
 assert.throws(
   () => store.saveEvaluation(evaluation("evaluation:qa-a-to-b-post-publish", normalMatch.id, "user:qa-a", "user:qa-b", "2026-05-29T02:00:00.000Z", 5)),

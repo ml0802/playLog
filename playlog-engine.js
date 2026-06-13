@@ -118,6 +118,16 @@
   const COMMON_KEYS = EVALUATION_FIELDS.common.map((field) => field.key);
   const POSITION_KEYS = Object.fromEntries(Object.entries(EVALUATION_FIELDS.position)
     .map(([position, fields]) => [position, fields.map((field) => field.key)]));
+  const QUICK_EVALUATION_FIELDS = {
+    common: [
+      { key: "activity", label: "활동량", mapsTo: ["activity", "stamina"] },
+      { key: "pass", label: "패스", mapsTo: ["stablePass", "buildUp"] },
+      { key: "ballControl", label: "볼 컨트롤", mapsTo: ["firstTouch", "dribbleImpact"] },
+      { key: "decision", label: "판단력", mapsTo: ["decision", "composure"] },
+      { key: "gameUnderstanding", label: "경기 이해도", mapsTo: ["offTheBall", "concentration"] },
+    ],
+    positionPerformance: { key: "positionPerformance", label: "포지션 수행도" },
+  };
   const LABELS = {
     activity: "활동량", decision: "판단력", stablePass: "안정적 패스", buildUp: "빌드업 능력",
     firstTouch: "퍼스트터치", dribbleImpact: "드리블 영향력", composure: "침착성",
@@ -189,6 +199,42 @@
     return scores
       .filter((score) => !category || score.category === category)
       .map((score) => score.score);
+  }
+
+  function expandQuickEvaluation(evaluation) {
+    if (!evaluation || evaluation.evaluationType !== "quick") return evaluation;
+    const quickScores = evaluation.quickScores || {};
+    const selectedPosition = normalizedPosition(evaluation.selectedPosition) || "free";
+    const commonScores = QUICK_EVALUATION_FIELDS.common.flatMap((field) => {
+      const value = Number(quickScores[field.key]);
+      if (!Number.isFinite(value)) return [];
+      return field.mapsTo.map((key) => ({
+        id: `${evaluation.id}:common:${key}`,
+        evaluationId: evaluation.id,
+        category: "common",
+        key,
+        score: value,
+      }));
+    });
+    const positionValue = Number(quickScores.positionPerformance);
+    const positionScores = Number.isFinite(positionValue)
+      ? (EVALUATION_FIELDS.position[selectedPosition] || []).map((field) => ({
+        id: `${evaluation.id}:position:${field.key}`,
+        evaluationId: evaluation.id,
+        category: "position",
+        key: field.key,
+        score: positionValue,
+      }))
+      : [];
+    return {
+      ...evaluation,
+      selectedPosition,
+      scores: [...commonScores, ...positionScores],
+    };
+  }
+
+  function expandQuickEvaluations(evaluations = []) {
+    return evaluations.map(expandQuickEvaluation);
   }
 
   function calculateCommonAverage(scores) {
@@ -759,9 +805,12 @@
 
   return {
     EVALUATION_FIELDS,
+    QUICK_EVALUATION_FIELDS,
     COMMON_KEYS,
     POSITION_KEYS,
     POSITIONS,
+    expandQuickEvaluation,
+    expandQuickEvaluations,
     calculateCommonAverage,
     calculatePositionAverage,
     calculateMatchScore,

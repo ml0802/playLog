@@ -101,6 +101,7 @@ const avatarSheets = {
   free: presetFreeUrl,
 };
 const evaluationFields = window.PlaylogEngine.EVALUATION_FIELDS;
+const quickEvaluationFields = window.PlaylogEngine.QUICK_EVALUATION_FIELDS;
 const savedLoginStorageKey = "playlog.currentUser";
 let currentUserId = null;
 const currentMatchId = window.PlaylogOfficialData?.activeEvaluationMatchId || "match:sangam-2026-05-23";
@@ -180,6 +181,7 @@ let pomReason = "";
 let nextStarReason = "";
 let reflectionStep = 0;
 let reflectionMatchId = null;
+let reflectionType = "official";
 let reflectionPosition = "free";
 let reflectionCommonScores = Object.fromEntries(evaluationFields.common.map((field) => [field.key, 6]));
 let reflectionPositionScores = Object.fromEntries(evaluationFields.position.free.map((field) => [field.key, 6]));
@@ -193,6 +195,7 @@ let reflectionGoal = "";
 let reflectionMemo = "";
 let selectedAvatar = "free-1";
 let activeCardTab = "match";
+let activeCardScope = "official";
 let justCompletedAwards = false;
 let matchResultMode = "summary";
 let matchResultSelectedCard = null;
@@ -216,8 +219,31 @@ function resetEvaluationDraft() {
   lastGeneratedCard = null;
 }
 
+function resetEvaluationDraftForMatch(match = activeMatchRecord()) {
+  resetEvaluationDraft();
+  if (isQuickMatch(match)) {
+    commonScores = Object.fromEntries(quickEvaluationFields.common.map((field) => [field.key, null]));
+    positionScores = { positionPerformance: null };
+  }
+}
+
+function matchType(match = activeMatchRecord()) {
+  return match?.matchType === "quick" || match?.match_type === "quick" ? "quick" : "official";
+}
+
+function isQuickMatch(match = activeMatchRecord()) {
+  return matchType(match) === "quick";
+}
+
+function activeEvaluationCollection(matchId = selectedMatchId) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
+  return matchType(match) === "quick"
+    ? (window.PlaylogOfficialData?.quickEvaluations || [])
+    : (window.PlaylogOfficialData?.evaluations || []);
+}
+
 function activeEvaluationForTarget(targetUserId = selectedPlayerId()) {
-  return (window.PlaylogOfficialData?.evaluations || [])
+  return activeEvaluationCollection(selectedMatchId)
     .filter((evaluation) =>
       evaluation.matchId === selectedMatchId
       && evaluation.evaluatorUserId === currentUserId
@@ -229,7 +255,7 @@ function activeEvaluationForTarget(targetUserId = selectedPlayerId()) {
 
 function loadEvaluationDraft(evaluation) {
   if (!evaluation) {
-    resetEvaluationDraft();
+    resetEvaluationDraftForMatch();
     return;
   }
   selectedPosition = evaluation.selectedPosition || null;
@@ -237,6 +263,11 @@ function loadEvaluationDraft(evaluation) {
   positionScores = selectedPosition && evaluationFields.position[selectedPosition]
     ? Object.fromEntries(evaluationFields.position[selectedPosition].map((field) => [field.key, null]))
     : {};
+  if (evaluation.evaluationType === "quick" && evaluation.quickScores) {
+    commonScores = Object.fromEntries(quickEvaluationFields.common.map((field) => [field.key, null]));
+    quickEvaluationFields.common.forEach((field) => { commonScores[field.key] = evaluation.quickScores[field.key] ?? null; });
+    positionScores = { positionPerformance: evaluation.quickScores.positionPerformance ?? null };
+  }
   (evaluation.scores || []).forEach((score) => {
     if (score.category === "common" && score.key in commonScores) commonScores[score.key] = score.score;
     if (score.category === "position" && score.key in positionScores) positionScores[score.key] = score.score;
@@ -421,14 +452,38 @@ function withUpsertedCard(cards, card) {
 }
 
 function buildGeneratedCardBundle({ matchId, userId, generatedAt }) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
+  const quick = isQuickMatch(match);
   const matchCard = window.PlaylogOfficialData?.generateCardFor?.(
     matchId,
     userId,
     generatedAt || new Date().toISOString(),
   );
   if (!matchCard) return null;
+  if (quick) matchCard.cardType = "quick";
 
-  const nextMatchCards = withUpsertedCard(window.PlaylogOfficialData?.playerMatchCards || [], matchCard);
+  const sourceMatchCards = quick
+    ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+    : (window.PlaylogOfficialData?.playerMatchCards || []);
+  const nextMatchCards = withUpsertedCard(sourceMatchCards, matchCard);
+  if (quick) {
+    const monthKey = matchCard.generatedAt.slice(0, 7);
+    const previousMonthlyCard = (window.PlaylogOfficialData?.quickPlayerMonthlyCards || [])
+      .filter((card) => card && card.userId === userId && card.monthKey < monthKey)
+      .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
+    const monthlyCard = window.PlaylogEngine?.generatePlayerMonthlyCard?.({
+      userId,
+      monthKey,
+      cards: nextMatchCards,
+      previousMonthlyCard,
+      generatedAt: matchCard.generatedAt,
+    }) || null;
+    if (monthlyCard) {
+      monthlyCard.id = `quick-player-monthly-card:${userId}:${monthKey}`;
+      monthlyCard.cardType = "quick";
+    }
+    return { matchCard, currentStats: null, monthlyCard };
+  }
   const previousStats = (window.PlaylogOfficialData?.playerCurrentStats || [])
     .find((stats) => stats && stats.userId === userId) || null;
   const currentStats = window.PlaylogEngine?.generatePlayerCurrentStats?.({
@@ -1142,6 +1197,7 @@ function resetNewMatchDraft() {
     date: toDatetimeLocalValue(new Date()),
     location: "",
     participantIds: [currentUserId],
+    matchType: "official",
     deadlineHours: 12,
     awardVotingEnabled: false,
     awardVotingTouched: false,
@@ -1158,6 +1214,7 @@ function matchDisplayMeta(match) {
 
 function renderActiveMatchProgress() {
   const match = activeMatchRecord();
+  const quick = isQuickMatch(match);
   const progress = window.PlaylogOfficialData?.getEvaluationProgress?.(selectedMatchId);
   if (!match || !progress) {
     document.querySelector("#activeMatchStatus").textContent = "대기";
@@ -1249,7 +1306,28 @@ function currentStatsForUser(userId = currentUserId) {
     }
   }
   const monthlyCard = latestMonthlyCardForUser(userId);
-  if (!monthlyCard) return null;
+  if (!monthlyCard) {
+    const quickCard = latestQuickMatchCardForUser(userId);
+    const quickMonthlyCard = latestQuickMonthlyCardForUser(userId);
+    const fallback = quickCard || quickMonthlyCard;
+    if (!fallback) return null;
+    return {
+      userId,
+      currentOVR: quickCard?.overallRating ?? quickMonthlyCard?.monthlyOVR ?? null,
+      previousOVR: quickCard?.previousOverallRating ?? quickMonthlyCard?.previousMonthlyOVR ?? null,
+      ovrChange: quickCard?.overallChange ?? quickMonthlyCard?.monthlyOVRChange ?? null,
+      radarData: fallback.radarData || {},
+      radarChange: null,
+      currentPlayStyle: quickCard?.playStyle || quickMonthlyCard?.mainPlayStyle || "퀵 평가 기준",
+      previousPlayStyle: null,
+      currentMainPosition: quickCard?.mainEvaluatedPosition || quickMonthlyCard?.mainPosition || null,
+      positionAdaptation: fallback.positionAdaptation || {},
+      reliabilityLevel: null,
+      recentMatchCount: quickCard ? 1 : quickMonthlyCard?.matchCount || 0,
+      sourceType: "quickFallback",
+      monthKey: quickMonthlyCard?.monthKey || null,
+    };
+  }
   return {
     userId,
     currentOVR: monthlyCard.monthlyOVR,
@@ -1304,6 +1382,7 @@ function currentFormWindowCards() {
 
 function currentFormBasisLabel(stats) {
   if (!stats) return "분석 준비중 · 아직 공식 경기 기록이 없습니다.";
+  if (stats.sourceType === "quickFallback") return "공식 기록 없음 · 퀵매치 기준 표시";
   if (stats.sourceType === "monthlyFallback") {
     const [year, month] = stats.monthKey.split("-");
     return `최근 공식 기록 없음 · 마지막 월간 카드 기준: ${year}년 ${Number(month)}월`;
@@ -1318,6 +1397,27 @@ function latestMonthlyCardForUser(userId = currentUserId) {
     .filter((card) => card && card.userId === userId)
     .filter((card) => monthlyMatchCards(card).length > 0)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey))[0] || null;
+}
+
+function quickMatchCardsForUser(userId = currentUserId) {
+  return (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+    .filter((card) => card && card.userId === userId && isPublishedMatchCard(card))
+    .sort((left, right) => new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime());
+}
+
+function quickMonthlyCardsForUser(userId = currentUserId) {
+  return (window.PlaylogOfficialData?.quickPlayerMonthlyCards || [])
+    .filter((card) => card && card.userId === userId)
+    .filter((card) => quickMonthlyMatchCards(card).length > 0)
+    .sort((left, right) => right.monthKey.localeCompare(left.monthKey));
+}
+
+function latestQuickMatchCardForUser(userId = currentUserId) {
+  return quickMatchCardsForUser(userId)[0] || null;
+}
+
+function latestQuickMonthlyCardForUser(userId = currentUserId) {
+  return quickMonthlyCardsForUser(userId)[0] || null;
 }
 
 function latestHomeMonthlyCard() {
@@ -1372,6 +1472,14 @@ function userMonthlyCards(userId = currentUserId) {
     .filter((card) => card && card.userId === userId)
     .filter((card) => monthlyMatchCards(card).length > 0)
     .sort((left, right) => right.monthKey.localeCompare(left.monthKey));
+}
+
+function visibleMatchCards(userId = currentUserId) {
+  return activeCardScope === "quick" ? quickMatchCardsForUser(userId) : userMatchCards(userId);
+}
+
+function visibleMonthlyCards(userId = currentUserId) {
+  return activeCardScope === "quick" ? quickMonthlyCardsForUser(userId) : userMonthlyCards(userId);
 }
 
 function latestHomeAnalysisCard() {
@@ -1785,7 +1893,7 @@ function currentPositionIdentityTemplate(card) {
 }
 
 function monthlyPositionDistribution(card) {
-  const counts = monthlyMatchCards(card).reduce((summary, matchCard) => {
+  const counts = (card.cardType === "quick" ? quickMonthlyMatchCards(card) : monthlyMatchCards(card)).reduce((summary, matchCard) => {
     positionSummaryEntries(matchCard.selectedPositionSummary).forEach((entry) => {
       summary[entry.position] = (summary[entry.position] || 0) + entry.count;
     });
@@ -1847,15 +1955,16 @@ function matchCardPreview(card, compact = false) {
   const position = positionLabels[card.mainEvaluatedPosition] || ["-", "-"];
   const change = changeLabel(card.overallChange);
   const tags = cardTagItems(card).slice(0, compact ? 2 : 3);
+  const quick = card.cardType === "quick";
   return `
-    <button class="card-preview match-preview" data-match-card="${card.matchId}" data-card-user="${card.userId}" type="button">
+    <button class="card-preview match-preview ${quick ? "quick-card-preview" : ""}" data-match-card="${card.matchId}" data-card-user="${card.userId}" type="button">
       <div class="card-preview-head">
-        <span>MATCH CARD</span>
+        <span>${quick ? "QUICK MATCH CARD" : "MATCH CARD"}</span>
         <small>${matchDate(card)}</small>
       </div>
       <div class="card-preview-main">
         <div><strong>${matchTitle(card)}</strong><p>${position[0]} · ${position[1]} · ${card.playStyle || "분석 준비중"}</p></div>
-        <b>OVR ${card.overallRating}<em>${change}</em></b>
+        <b>${quick ? "QUICK OVR" : "OVR"} ${card.overallRating}<em>${change}</em></b>
       </div>
       <div class="card-preview-tags">${tags.map((tag) => `<i>${tag}</i>`).join("")}</div>
     </button>
@@ -1872,14 +1981,14 @@ function monthlyCardPreview(card) {
     ...(card.strengthsSummary || []).slice(0, 1).map((item) => item.label),
   ];
   return `
-    <button class="card-preview monthly-preview" data-monthly-card="${card.monthKey}" type="button">
+    <button class="card-preview monthly-preview ${quick ? "quick-card-preview" : ""}" data-monthly-card="${card.monthKey}" data-card-user="${card.userId}" type="button">
       <div class="card-preview-head">
-        <span>MONTHLY CARD</span>
+        <span>${quick ? "QUICK MONTHLY CARD" : "MONTHLY CARD"}</span>
         <small>${year}년 ${Number(month)}월 평균</small>
       </div>
       <div class="card-preview-main">
         <div><strong>${card.monthKey}</strong><p>${position} · ${card.mainPlayStyle || "분석 준비중"}</p></div>
-        <b>OVR ${card.monthlyOVR}<em>${change}</em></b>
+        <b>${quick ? "QUICK OVR" : "OVR"} ${card.monthlyOVR}<em>${change}</em></b>
       </div>
       <div class="card-preview-tags">${tags.filter(Boolean).map((tag) => `<i>${tag}</i>`).join("")}</div>
     </button>
@@ -1901,7 +2010,7 @@ function homeMatchSummary(card) {
 }
 
 function receivedComments(matchId, userId) {
-  return (window.PlaylogOfficialData?.evaluations || [])
+  return activeEvaluationCollection(matchId)
     .filter((evaluation) => evaluation.matchId === matchId && evaluation.targetUserId === userId)
     .map((evaluation) => sanitizeOptionalText(evaluation.overallComment, [evaluationCommentPlaceholder]))
     .filter(Boolean);
@@ -1909,7 +2018,7 @@ function receivedComments(matchId, userId) {
 
 function activeEvaluationsForCard(card) {
   if (!isPublishedMatchCard(card)) return [];
-  return (window.PlaylogOfficialData?.evaluations || [])
+  return activeEvaluationCollection(card.matchId)
     .filter((evaluation) => evaluation.matchId === card.matchId && evaluation.targetUserId === card.userId && evaluation.isActive !== false);
 }
 
@@ -1934,6 +2043,25 @@ function scoreItemsForFields(sourceItems, fields) {
   }));
 }
 
+function scoreValueForKey(sourceItems, key) {
+  return sourceItems.find((item) => item.key === key)?.score;
+}
+
+function quickScoreItems(sourceItems = [], position = "free") {
+  const value = (keys) => {
+    const values = keys.map((key) => scoreValueForKey(sourceItems, key)).filter((score) => Number.isFinite(score));
+    return values.length ? Math.round(average(values) * 10) / 10 : null;
+  };
+  return [
+    { key: "activity", label: "활동량", score: value(["activity", "stamina"]) },
+    { key: "pass", label: "패스", score: value(["stablePass", "buildUp"]) },
+    { key: "ballControl", label: "볼 컨트롤", score: value(["firstTouch", "dribbleImpact"]) },
+    { key: "decision", label: "판단력", score: value(["decision", "composure"]) },
+    { key: "gameUnderstanding", label: "경기 이해도", score: value(["offTheBall", "concentration"]) },
+    { key: "positionPerformance", label: "포지션 수행도", score: value((evaluationFields.position[position] || []).map((field) => field.key)) },
+  ];
+}
+
 function reportScoreBlock(title, items) {
   return `
     <section class="report-block">
@@ -1945,8 +2073,38 @@ function reportScoreBlock(title, items) {
   `;
 }
 
+function matchAwardSummaryTemplate(card) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === card.matchId);
+  if (!isAwardVotingEnabled(match)) return "";
+  const votes = window.PlaylogOfficialData?.matchAwardVotes || [];
+  const block = (type, label) => {
+    const result = window.PlaylogOfficialData?.calculateMatchAward?.(card.matchId, type);
+    const winnerIds = result?.winnerUserIds || [];
+    if (!winnerIds.length) return `<span>${label}<strong>집계 없음</strong></span>`;
+    const winner = winnerIds[0];
+    const reasons = votes
+      .filter((vote) => vote.matchId === card.matchId && vote.type === type && vote.targetUserId === winner && vote.reason)
+      .map((vote) => escapeHtml(vote.reason))
+      .slice(0, 2);
+    return `<span>${label}<strong>${displayUserName(winner)} · ${result.voteCount || 0}표</strong>${reasons.length ? `<small>${reasons.join("<br>")}</small>` : ""}</span>`;
+  };
+  return `
+    <section class="report-block">
+      <div class="result-section-head">경기 투표 결과<span>수상자 기준</span></div>
+      <div class="report-score-grid award-summary-grid">
+        ${block("pom", "POM")}
+        ${block("next_star", "다음 경기 주인공")}
+      </div>
+    </section>
+  `;
+}
+
 function monthlyMatchCards(card) {
   return userMatchCards(card.userId).filter((matchCard) => (matchCard.generatedAt || "").slice(0, 7) === card.monthKey);
+}
+
+function quickMonthlyMatchCards(card) {
+  return quickMatchCardsForUser(card.userId).filter((matchCard) => (matchCard.generatedAt || "").slice(0, 7) === card.monthKey);
 }
 
 function averagedAnalysisScores(cards) {
@@ -1982,6 +2140,23 @@ function monthlyComparisonTemplate(card) {
         ${radarDiffs.map((item) => `<i>${item}</i>`).join("")}
       </div>
     </div>
+  `;
+}
+
+function monthlyQuickAwardTotalsTemplate(card) {
+  const matchCards = quickMonthlyMatchCards(card);
+  const wonCount = (type) => matchCards.filter((matchCard) => {
+    const result = window.PlaylogOfficialData?.calculateMatchAward?.(matchCard.matchId, type);
+    return (result?.winnerUserIds || []).includes(card.userId);
+  }).length;
+  return `
+    <section class="report-block">
+      <div class="result-section-head">퀵 누적 기록<span>공식과 별도 집계</span></div>
+      <div class="report-score-grid">
+        <span>퀵 POM 획득<strong>${wonCount("pom")}회</strong></span>
+        <span>퀵 다음 경기 주인공<strong>${wonCount("next_star")}회</strong></span>
+      </div>
+    </section>
   `;
 }
 
@@ -2072,11 +2247,12 @@ function largeCardShell({ type, name = "승현", preset = currentAvatarPreset(),
 function matchCardViewTemplate(card, options = {}) {
   const identity = representativeMatchIdentity(card);
   const roleInfo = roleMatchInfo(card);
+  const quick = card.cardType === "quick";
   return largeCardShell({
-    type: "MATCH CARD",
+    type: quick ? "QUICK MATCH CARD" : "MATCH CARD",
     name: displayUserName(card.userId),
     preset: avatarPresetForUser(card.userId),
-    kicker: "MATCH CARD",
+    kicker: quick ? "QUICK MATCH CARD" : "MATCH CARD",
     title: `${matchTitle(card)} · ${matchDate(card)}`,
     subtitle: `${identity.label} · ${identity.code}`,
     playStyle: identity.playStyle,
@@ -2087,7 +2263,7 @@ function matchCardViewTemplate(card, options = {}) {
     radarData: card.radarData || {},
     tags: [roleInfo.type, ...cardTagItems(card)].slice(0, 3),
     basis: "해당 경기 기준",
-    detailLabel: "상세 리포트 보기",
+    detailLabel: quick ? "퀵 상세 리포트 보기" : "상세 리포트 보기",
     detailKind: "card",
     payloadKey: `${card.matchId}::${card.userId}`,
     allowDetail: options.allowDetail !== false,
@@ -2098,11 +2274,12 @@ function matchCardViewTemplate(card, options = {}) {
 function monthlyCardViewTemplate(card) {
   const [year, month] = card.monthKey.split("-");
   const position = positionLabels[card.mainPosition] || ["-", "-"];
+  const quick = card.cardType === "quick";
   return largeCardShell({
-    type: "MONTHLY CARD",
+    type: quick ? "QUICK MONTHLY CARD" : "MONTHLY CARD",
     name: displayUserName(card.userId),
     preset: avatarPresetForUser(card.userId),
-    kicker: "MONTHLY CARD",
+    kicker: quick ? "QUICK MONTHLY CARD" : "MONTHLY CARD",
     title: `${year}년 ${Number(month)}월 평균`,
     subtitle: `${position[0]} · ${position[1]}`,
     playStyle: card.mainPlayStyle || "분석 준비중",
@@ -2116,7 +2293,7 @@ function monthlyCardViewTemplate(card) {
       monthlyPositionIdentityText(card),
       ...(card.strengthsSummary || []).slice(0, 2).map((item) => item.label),
     ].slice(0, 3),
-    basis: `${year}년 ${Number(month)}월 전체 경기 단순 평균 · 가중치 없음`,
+    basis: `${year}년 ${Number(month)}월 ${quick ? "퀵" : "전체"} 경기 단순 평균 · 가중치 없음`,
     detailLabel: "월간 리포트 보기",
     detailKind: "monthlyReport",
     payloadKey: `${card.userId}::${card.monthKey}`,
@@ -2124,6 +2301,7 @@ function monthlyCardViewTemplate(card) {
 }
 
 function officialAnalysisTemplate(card) {
+  const quick = card.cardType === "quick";
   const hasPrevious = Number.isFinite(card.previousOverallRating);
   const hasChange = Number.isFinite(card.overallChange);
   const ovrValue = hasPrevious ? `${card.previousOverallRating} → ${card.overallRating}` : `OVR ${card.overallRating}`;
@@ -2135,7 +2313,9 @@ function officialAnalysisTemplate(card) {
   const hasSmallOnlyChanges = hasAnalysisComparison
     && Math.max(...card.analysisChanges.map((change) => Math.abs(change.diff || 0))) < 2;
   const evaluations = activeEvaluationsForCard(card);
-  const commonItems = scoreItemsForFields(card.analysisScores || [], evaluationFields.common);
+  const commonItems = quick
+    ? quickScoreItems(card.analysisScores || [], card.mainEvaluatedPosition)
+    : scoreItemsForFields(card.analysisScores || [], evaluationFields.common);
   const positionFields = evaluationFields.position[card.mainEvaluatedPosition] || [];
   const positionItems = scoreItemsForFields(card.analysisScores || [], positionFields);
   const traitItems = averagedTraitItems(evaluations);
@@ -2164,12 +2344,12 @@ function officialAnalysisTemplate(card) {
     `;
   return `
       <div class="result-title">
-        <h3>POST MATCH REPORT</h3>
+        <h3>${quick ? "QUICK MATCH CARD" : "POST MATCH REPORT"}</h3>
         <button data-close-sheet type="button" aria-label="결과창 닫기">×</button>
       </div>
-      <p class="result-description">이번 경기 변화 분석 · 최근 60일 내 최근 경기 평균 대비</p>
+      <p class="result-description">${quick ? "퀵 경기 분석 · 공식 OVR과 CURRENT FORM 미반영" : "이번 경기 변화 분석 · 최근 60일 내 최근 경기 평균 대비"}</p>
       <div class="result-overall">
-        <div><small>OVR</small><strong>${ovrValue}</strong></div>
+        <div><small>${quick ? "QUICK OVR" : "OVR"}</small><strong>${ovrValue}</strong></div>
         <em>${trend}</em>
       </div>
       <div class="report-summary">
@@ -2178,8 +2358,8 @@ function officialAnalysisTemplate(card) {
         <small>${matchTitle(card)} · ${matchDate(card)}</small>
       </div>
       <div class="report-radar">${playerCurrentRadarStats(card).map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
-      ${reportScoreBlock("공통 평가 전체", commonItems)}
-      ${reportScoreBlock("포지션 평가 전체", positionItems)}
+      ${reportScoreBlock(quick ? "퀵 평가 전체" : "공통 평가 전체", commonItems)}
+      ${quick ? "" : reportScoreBlock("포지션 평가 전체", positionItems)}
       ${reportScoreBlock("선택 평가 전체", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
       ${positionIdentityTemplate(card)}
       ${analysisSections}
@@ -2191,6 +2371,7 @@ function officialAnalysisTemplate(card) {
         <small>경기 분석 요약</small>
         <p>${card.matchAnalysisText}</p>
       </div>
+      ${matchAwardSummaryTemplate(card)}
       <button class="primary full" data-close-sheet type="button">확인</button>
     `;
 }
@@ -2244,25 +2425,28 @@ function currentFormAnalysisTemplate(card) {
 }
 
 function monthlyReportTemplate(card) {
+  const quick = card.cardType === "quick";
   const [year, month] = card.monthKey.split("-");
   const change = changeLabel(card.monthlyOVRChange) || "-";
   const position = positionLabels[card.mainPosition]?.[0] || "-";
   const strengths = (card.strengthsSummary || []).slice(0, 3).map((item) => `<i>${item.label}</i>`).join("");
-  const matchCards = monthlyMatchCards(card);
+  const matchCards = quick ? quickMonthlyMatchCards(card) : monthlyMatchCards(card);
   const monthlyScores = averagedAnalysisScores(matchCards);
-  const commonItems = scoreItemsForFields(monthlyScores, evaluationFields.common);
+  const commonItems = quick
+    ? quickScoreItems(monthlyScores, card.mainPosition)
+    : scoreItemsForFields(monthlyScores, evaluationFields.common);
   const positionItems = scoreItemsForFields(monthlyScores, evaluationFields.position[card.mainPosition] || []);
   const monthlyEvaluations = matchCards.flatMap((matchCard) => activeEvaluationsForCard(matchCard));
   const traitItems = averagedTraitItems(monthlyEvaluations);
   const weaknesses = (card.weaknessesSummary || []).slice(0, 3).map((item) => `<i>${item.label}</i>`).join("");
   return `
     <div class="result-title">
-      <h3>MONTHLY REPORT</h3>
+      <h3>${quick ? "QUICK MONTHLY CARD" : "MONTHLY REPORT"}</h3>
       <button data-close-sheet type="button" aria-label="월 카드 닫기">×</button>
     </div>
-    <p class="result-description">MONTHLY CARD · ${year}년 ${Number(month)}월 평균 · 해당 월 경기 단순 평균</p>
+    <p class="result-description">${quick ? "QUICK MONTHLY CARD" : "MONTHLY CARD"} · ${year}년 ${Number(month)}월 평균 · 해당 월 ${quick ? "퀵" : "공식"} 경기 단순 평균</p>
     <div class="result-overall">
-      <div><small>월간 OVR</small><strong>${card.monthlyOVR}</strong></div>
+      <div><small>${quick ? "QUICK OVR" : "월간 OVR"}</small><strong>${card.monthlyOVR}</strong></div>
       <em>${change}</em>
     </div>
     <div class="report-summary">
@@ -2271,9 +2455,9 @@ function monthlyReportTemplate(card) {
       <small>${position} · 월 단위 누적 평균 · 가중치 없음</small>
     </div>
     <div class="report-radar">${playerCurrentRadarStats(card).map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
-    ${reportScoreBlock("월간 공통평가 평균", commonItems)}
-    ${reportScoreBlock("월간 포지션평가 평균", positionItems)}
-    ${reportScoreBlock("월간 선택평가 평균", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
+    ${reportScoreBlock(quick ? "퀵 평가 평균" : "월간 공통평가 평균", commonItems)}
+    ${quick ? "" : reportScoreBlock("월간 포지션평가 평균", positionItems)}
+    ${quick ? "" : reportScoreBlock("월간 선택평가 평균", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
     ${monthlyPositionDistributionTemplate(card)}
     ${monthlyPositionAdaptationTemplate(card)}
     <div class="style-change">
@@ -2284,8 +2468,8 @@ function monthlyReportTemplate(card) {
       <small>월간 보완점 요약</small>
       <div class="card-preview-tags">${weaknesses || "<i>월간 보완점 데이터가 쌓이는 중입니다.</i>"}</div>
     </div>
-    ${monthlyComparisonTemplate(card)}
-    <p class="analysis-note">${year}년 ${Number(month)}월 전체 경기 단순 평균 기준입니다. 가중치 없음.</p>
+    ${quick ? monthlyQuickAwardTotalsTemplate(card) : monthlyComparisonTemplate(card)}
+    <p class="analysis-note">${year}년 ${Number(month)}월 ${quick ? "퀵" : "전체"} 경기 단순 평균 기준입니다. 가중치 없음.</p>
     <button class="primary full" data-close-sheet type="button">확인</button>
   `;
 }
@@ -2333,7 +2517,10 @@ function matchResultTemplate() {
 function matchResultDetailTemplate() {
   const match = activeMatchRecord();
   const participantIds = match?.participants?.map((participant) => participant.userId) || [];
-  const participantCards = (window.PlaylogOfficialData?.playerMatchCards || [])
+  const sourceCards = isQuickMatch(match)
+    ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+    : (window.PlaylogOfficialData?.playerMatchCards || []);
+  const participantCards = sourceCards
     .filter((card) => card && card.matchId === selectedMatchId && isPublishedMatchCard(card))
     .sort((left, right) => {
       const leftIndex = participantIds.indexOf(left.userId);
@@ -2361,8 +2548,11 @@ function matchResultDetailTemplate() {
 
 function awardSummaryCard(title, result, type) {
   const votes = window.PlaylogOfficialData?.matchAwardVotes || [];
+  const sourceCards = isQuickMatch(activeMatchRecord())
+    ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+    : (window.PlaylogOfficialData?.playerMatchCards || []);
   const winnerIds = result?.winnerUserIds || [];
-  const winnerCards = winnerIds.map((winnerId) => (window.PlaylogOfficialData?.playerMatchCards || [])
+  const winnerCards = winnerIds.map((winnerId) => sourceCards
     .find((card) => card.matchId === selectedMatchId && card.userId === winnerId && isPublishedMatchCard(card))).filter(Boolean);
   const identity = winnerCards[0] ? representativeMatchIdentity(winnerCards[0]) : null;
   const winnerNames = winnerIds.length
@@ -2401,7 +2591,10 @@ function awardSummaryCard(title, result, type) {
 function matchResultParticipantCards() {
   const match = activeMatchRecord();
   const participantIds = match?.participants?.map((participant) => participant.userId) || [];
-  const cards = (window.PlaylogOfficialData?.playerMatchCards || [])
+  const sourceCards = isQuickMatch(match)
+    ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+    : (window.PlaylogOfficialData?.playerMatchCards || []);
+  const cards = sourceCards
     .filter((card) => card && card.matchId === selectedMatchId && isPublishedMatchCard(card))
     .sort((left, right) => {
       const leftIndex = participantIds.indexOf(left.userId);
@@ -2413,7 +2606,7 @@ function matchResultParticipantCards() {
       selectedMatchId,
       matchStatus: match?.status,
       participantIds,
-      localCardsForMatch: (window.PlaylogOfficialData?.playerMatchCards || [])
+      localCardsForMatch: sourceCards
         .filter((card) => card?.matchId === selectedMatchId),
     });
   }
@@ -3136,7 +3329,7 @@ function renderEvaluation() {
   document.querySelector("#stepTitle").textContent = isAwardStep ? "경기 투표" : currentStep >= 6 ? "평가 저장 완료" : flowSteps[currentStep];
   document.querySelector("#stepHelp").textContent = isAwardStep
     ? "두 선택은 OVR에 영향 없이 결과 공개 때 함께 보여집니다."
-    : currentStep === 2 ? "평균은 6점입니다." : "공식 선수카드는 동료 평가만 반영합니다.";
+    : currentStep === 2 ? "평균은 6점입니다." : quick ? "퀵 평가는 퀵 카드에만 반영됩니다." : "공식 선수카드는 동료 평가만 반영합니다.";
   renderStepper();
 
   const pane = document.querySelector("#evaluationPane");
@@ -3150,10 +3343,13 @@ function renderEvaluation() {
   } else if (currentStep === 1) {
     pane.innerHTML = `<div class="selector-grid">${positions.map(([key, label, desc]) => `<button class="choice-card ${key === selectedPosition ? "selected" : ""}" data-position="${key}" type="button"><strong>${label}</strong><br><small>${desc}</small></button>`).join("")}</div>${actions()}`;
   } else if (currentStep === 2) {
-    pane.innerHTML = `<div class="rating-list">${renderRatingFields(evaluationFields.common, "common", commonScores)}</div>${actions()}`;
+    const fields = quick ? quickEvaluationFields.common : evaluationFields.common;
+    pane.innerHTML = `<div class="rating-list">${renderRatingFields(fields, "common", commonScores)}</div>${actions()}`;
   } else if (currentStep === 3) {
     const positionLabel = positions.find(([key]) => key === selectedPosition)?.[1] || "포지션";
-    const positionFields = selectedPosition ? evaluationFields.position[selectedPosition] : [];
+    const positionFields = quick
+      ? [{ key: "positionPerformance", label: "포지션 수행도", description: `${positionLabel} 역할을 얼마나 잘 수행했는지` }]
+      : selectedPosition ? evaluationFields.position[selectedPosition] : [];
     pane.innerHTML = `<h3 class="eval-subtitle focus-title">${positionLabel} 평가 <small>선택한 역할 기준</small></h3><div class="rating-list">${renderRatingFields(positionFields, "position", positionScores)}</div>${actions()}`;
   } else if (currentStep === 4) {
     pane.innerHTML = `
@@ -3257,7 +3453,9 @@ function renderEvaluation() {
   }));
   pane.querySelectorAll("[data-position]").forEach((button) => button.addEventListener("click", () => {
     selectedPosition = button.dataset.position;
-    positionScores = Object.fromEntries(evaluationFields.position[selectedPosition].map((field) => [field.key, null]));
+    positionScores = isQuickMatch(activeMatchRecord())
+      ? { positionPerformance: null }
+      : Object.fromEntries(evaluationFields.position[selectedPosition].map((field) => [field.key, null]));
     showToast(`${button.querySelector("strong").textContent} 역할로 저장`);
     renderEvaluation();
   }));
@@ -3315,10 +3513,18 @@ function renderEvaluation() {
       return;
     }
     if (currentStep === 2 && !hasAllScores(evaluationFields.common, commonScores)) {
+      if (quick && hasAllScores(quickEvaluationFields.common, commonScores)) {
+        currentStep += 1;
+        renderEvaluation();
+        return;
+      }
       showToast("공통 평가를 모두 선택해주세요.");
       return;
     }
-    if (currentStep === 3 && (!selectedPosition || !hasAllScores(evaluationFields.position[selectedPosition], positionScores))) {
+    const requiredPositionFields = quick
+      ? [{ key: "positionPerformance" }]
+      : evaluationFields.position[selectedPosition];
+    if (currentStep === 3 && (!selectedPosition || !hasAllScores(requiredPositionFields, positionScores))) {
       showToast("포지션 평가를 모두 선택해주세요.");
       return;
     }
@@ -3373,6 +3579,29 @@ function renderTraitRatingFields(fields, selectedKeys, ratings, prefix) {
 }
 
 function buildEvaluation(id) {
+  const quick = isQuickMatch(activeMatchRecord());
+  if (quick) {
+    const quickEvaluation = {
+      id,
+      matchId: selectedMatchId,
+      evaluatorUserId: currentUserId,
+      targetUserId: selectedPlayerId(),
+      selectedPosition,
+      evaluationType: "quick",
+      quickScores: {
+        ...Object.fromEntries(quickEvaluationFields.common.map((field) => [field.key, commonScores[field.key]])),
+        positionPerformance: positionScores.positionPerformance,
+      },
+      overallComment: sanitizeOptionalText(overallComment, [evaluationCommentPlaceholder]),
+      createdAt: new Date().toISOString(),
+      version: 1,
+      isActive: true,
+      updatedAt: new Date().toISOString(),
+      traits: selectedTraits.map((key) => ({ id: `${id}:trait:${key}`, evaluationId: id, key, score: traitScores[key] || observedTraitScore })),
+      highlights: selectedHighlights.slice(0, 2).map((key) => ({ id: `${id}:highlight:${key}`, evaluationId: id, key })),
+    };
+    return window.PlaylogEngine.expandQuickEvaluation(quickEvaluation);
+  }
   return {
     id,
     matchId: selectedMatchId,
@@ -3421,9 +3650,12 @@ function selectionActions() {
 function resetReflection(matchId = null) {
   reflectionStep = 0;
   reflectionMatchId = matchId;
+  reflectionType = matchType((window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId));
   reflectionPosition = null;
-  reflectionCommonScores = Object.fromEntries(evaluationFields.common.map((field) => [field.key, null]));
-  reflectionPositionScores = {};
+  reflectionCommonScores = reflectionType === "quick"
+    ? Object.fromEntries(quickEvaluationFields.common.map((field) => [field.key, null]))
+    : Object.fromEntries(evaluationFields.common.map((field) => [field.key, null]));
+  reflectionPositionScores = reflectionType === "quick" ? { positionPerformance: null } : {};
   reflectionTraits = [];
   reflectionTraitScores = {};
   reflectionHighlights = [];
@@ -3446,12 +3678,17 @@ function reflectionActions(nextLabel = "다음") {
 
 function buildSelfReflection(id) {
   const position = reflectionPosition || "free";
+  const quick = reflectionType === "quick";
   return {
     id,
     userId: currentUserId,
     matchId: reflectionMatchId,
+    reflectionType,
     selectedPosition: position,
-    selfScores: [
+    selfScores: quick ? [
+      ...quickEvaluationFields.common.map((field) => ({ category: "quick", key: field.key, score: reflectionCommonScores[field.key] })),
+      { category: "quick", key: "positionPerformance", score: reflectionPositionScores.positionPerformance },
+    ] : [
       ...evaluationFields.common.map((field) => ({ category: "common", key: field.key, score: reflectionCommonScores[field.key] })),
       ...evaluationFields.position[position].map((field) => ({ category: "position", key: field.key, score: reflectionPositionScores[field.key] })),
     ],
@@ -3493,7 +3730,7 @@ function renderReflection() {
     <div id="reflectionPane"></div>
   `;
   document.querySelector("#reflectionContext").textContent = reflectionMatchId
-    ? "경기 후 회고 · 현재 경기와 연결됨"
+    ? `${reflectionType === "quick" ? "퀵 회고" : "경기 후 회고"} · 현재 경기와 연결됨`
     : "빠른 회고 · 경기 연결 없음";
   document.querySelector("#reflectionStepTitle").textContent = reflectionSteps[reflectionStep] || "저장 완료";
   document.querySelector("#reflectionStepHelp").textContent = reflectionStep === 4
@@ -3505,17 +3742,20 @@ function renderReflection() {
   if (reflectionStep === 0) {
     pane.innerHTML = `<div class="selector-grid">${positions.map(([key, label, desc]) => `<button class="choice-card ${key === reflectionPosition ? "selected" : ""}" data-reflection-position="${key}" type="button"><strong>${label}</strong><br><small>${desc}</small></button>`).join("")}</div>${reflectionActions()}`;
   } else if (reflectionStep === 1) {
-    pane.innerHTML = `<div class="rating-list">${renderSelfRatingFields(evaluationFields.common, "common", reflectionCommonScores)}</div>${reflectionActions()}`;
+    const fields = reflectionType === "quick" ? quickEvaluationFields.common : evaluationFields.common;
+    pane.innerHTML = `<div class="rating-list">${renderSelfRatingFields(fields, reflectionType === "quick" ? "quick" : "common", reflectionCommonScores)}</div>${reflectionActions()}`;
   } else if (reflectionStep === 2) {
     const positionLabel = positions.find(([key]) => key === reflectionPosition)?.[1] || "포지션";
-    const positionFields = reflectionPosition ? evaluationFields.position[reflectionPosition] : [];
+    const positionFields = reflectionType === "quick"
+      ? [{ key: "positionPerformance", label: "포지션 수행도", description: `${positionLabel} 역할을 얼마나 잘 수행했는지` }]
+      : reflectionPosition ? evaluationFields.position[reflectionPosition] : [];
     pane.innerHTML = `<h3 class="eval-subtitle focus-title">오늘의 ${positionLabel} 느낌 <small>자가 기준</small></h3><div class="rating-list">${renderSelfRatingFields(positionFields, "position", reflectionPositionScores)}</div>${reflectionActions()}`;
   } else if (reflectionStep === 3) {
     pane.innerHTML = `<h3 class="eval-subtitle">플레이 성향 <small>선택 입력 · 1~10점</small></h3><div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, reflectionTraits, reflectionTraitScores, "reflection-trait")}</div><h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3><div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${reflectionHighlights.includes(field.key) ? "selected" : ""}" data-reflection-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>${reflectionActions()}`;
   } else if (reflectionStep === 4) {
     pane.innerHTML = `<label>오늘 만족도<input id="reflectionSatisfaction" type="range" min="1" max="10" value="${satisfactionScore}" /></label><div class="self-result"><span>만족도</span><strong id="reflectionSatisfactionValue">${satisfactionScore}</strong></div><label>가장 만족한 점<textarea id="reflectionStrength" rows="2" placeholder="예: 오늘은 압박을 받기 전에 먼저 패스를 선택했다.">${feltStrength}</textarea></label><label>가장 아쉬운 점<textarea id="reflectionWeakness" rows="2" placeholder="예: 좋은 위치에서 슈팅 타이밍을 한 번 놓쳤다.">${feltWeakness}</textarea></label><label>다음 경기 목표<input id="reflectionGoal" value="${reflectionGoal}" placeholder="예: 첫 터치 후 전방을 한 번 더 보기" /></label><label>자유 메모<textarea id="reflectionMemo" rows="3" placeholder="오늘 경기에서 기억하고 싶은 장면을 짧게 남겨보세요.">${reflectionMemo}</textarea></label>${reflectionActions("회고 저장하기")}`;
   } else {
-    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>자가 회고 저장 완료!</h2><p>공식 선수카드와 분리된 개인 기록으로 저장되었습니다.</p><button class="primary full" data-go-reflection-history type="button">회고 히스토리 보기</button></div>`;
+    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>자가 회고 저장 완료!</h2><p>${reflectionType === "quick" ? "퀵 자기회고로 별도 저장되었습니다." : "공식 선수카드와 분리된 개인 기록으로 저장되었습니다."}</p><button class="primary full" data-go-reflection-history type="button">회고 히스토리 보기</button></div>`;
     pane.querySelector("[data-go-reflection-history]")?.addEventListener("click", () => {
       reflectionMode = "list";
       renderReflection();
@@ -3524,7 +3764,9 @@ function renderReflection() {
   }
   pane.querySelectorAll("[data-reflection-position]").forEach((button) => button.addEventListener("click", () => {
     reflectionPosition = button.dataset.reflectionPosition;
-    reflectionPositionScores = Object.fromEntries(evaluationFields.position[reflectionPosition].map((field) => [field.key, null]));
+    reflectionPositionScores = reflectionType === "quick"
+      ? { positionPerformance: null }
+      : Object.fromEntries(evaluationFields.position[reflectionPosition].map((field) => [field.key, null]));
     renderReflection();
   }));
   pane.querySelectorAll("[data-self-rating-value]").forEach((button) => button.addEventListener("click", () => {
@@ -3573,11 +3815,15 @@ function renderReflection() {
       showToast("회고 포지션을 먼저 선택해주세요.");
       return;
     }
-    if (reflectionStep === 1 && !hasAllScores(evaluationFields.common, reflectionCommonScores)) {
+    const reflectionCommonFields = reflectionType === "quick" ? quickEvaluationFields.common : evaluationFields.common;
+    const reflectionPositionFields = reflectionType === "quick"
+      ? [{ key: "positionPerformance" }]
+      : evaluationFields.position[reflectionPosition];
+    if (reflectionStep === 1 && !hasAllScores(reflectionCommonFields, reflectionCommonScores)) {
       showToast("공통 자가평가를 모두 선택해주세요.");
       return;
     }
-    if (reflectionStep === 2 && (!reflectionPosition || !hasAllScores(evaluationFields.position[reflectionPosition], reflectionPositionScores))) {
+    if (reflectionStep === 2 && (!reflectionPosition || !hasAllScores(reflectionPositionFields, reflectionPositionScores))) {
       showToast("포지션 자가평가를 모두 선택해주세요.");
       return;
     }
@@ -3868,6 +4114,19 @@ function renderNewMatch() {
         </div>
       </section>
       <section class="new-match-section">
+        <strong>평가 방식 <span class="required-pill">필수</span></strong>
+        <p>경기 평가를 어떤 방식으로 진행할지 선택하세요.</p>
+        <div class="match-type-grid">
+          <button class="choice-card ${newMatchDraft.matchType !== "quick" ? "selected" : ""}" data-new-match-type="official" type="button">
+            <strong>일반 경기</strong><br><small>정식 평가로 OVR과 현재폼에 반영됩니다.</small>
+          </button>
+          <button class="choice-card ${newMatchDraft.matchType === "quick" ? "selected" : ""}" data-new-match-type="quick" type="button">
+            <strong>퀵 경기</strong><br><small>간단 평가로 퀵 카드에만 반영됩니다.</small>
+          </button>
+        </div>
+        <div class="new-match-note">퀵 경기는 메인 OVR, CURRENT FORM, 공식 카드에 반영되지 않습니다.</div>
+      </section>
+      <section class="new-match-section">
         <strong>평가 마감 시간</strong>
         <div class="deadline-select-grid">
           ${[4, 6, 12, 24].map((hour) => `<button class="chip compact ${newMatchDraft.deadlineHours === hour ? "selected" : ""}" data-new-match-deadline="${hour}" type="button">${hour}시간</button>`).join("")}
@@ -3904,6 +4163,10 @@ function renderNewMatch() {
   }));
   pane.querySelectorAll("[data-new-match-deadline]").forEach((button) => button.addEventListener("click", () => {
     newMatchDraft.deadlineHours = Number(button.dataset.newMatchDeadline);
+    renderNewMatch();
+  }));
+  pane.querySelectorAll("[data-new-match-type]").forEach((button) => button.addEventListener("click", () => {
+    newMatchDraft.matchType = button.dataset.newMatchType === "quick" ? "quick" : "official";
     renderNewMatch();
   }));
   pane.querySelector("[data-new-match-awards]")?.addEventListener("click", () => {
@@ -3949,6 +4212,7 @@ function renderNewMatch() {
           evaluationCompleted: false,
         })),
         evaluationDeadlineHours: newMatchDraft.deadlineHours,
+        matchType: newMatchDraft.matchType === "quick" ? "quick" : "official",
         awardVotingEnabled: newMatchDraft.awardVotingEnabled,
         status: "evaluating",
       });
@@ -3965,21 +4229,40 @@ function renderNewMatch() {
 }
 
 function renderCards() {
+  const segments = document.querySelector(".card-segments");
+  if (segments && !document.querySelector(".card-scope-segments")) {
+    segments.insertAdjacentHTML("afterend", `
+      <div class="card-segments card-scope-segments" aria-label="카드 범위">
+        <button class="active" data-card-scope="official" type="button">공식</button>
+        <button data-card-scope="quick" type="button">퀵</button>
+      </div>
+      <div class="card-scope-note" id="cardScopeNote"></div>
+    `);
+  }
   document.querySelectorAll("[data-card-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.cardTab === activeCardTab);
   });
+  document.querySelectorAll("[data-card-scope]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.cardScope === activeCardScope);
+  });
+  const note = document.querySelector("#cardScopeNote");
+  if (note) {
+    note.textContent = activeCardScope === "quick"
+      ? "퀵 경기는 퀵 카드에만 반영되며, OVR과 현재폼에는 반영되지 않습니다."
+      : "공식 경기는 OVR과 현재폼에 반영됩니다.";
+  }
   const list = document.querySelector("#cardList");
   if (activeCardTab === "monthly") {
-    const monthlyCards = userMonthlyCards();
+    const monthlyCards = visibleMonthlyCards();
     list.innerHTML = monthlyCards.length
       ? monthlyCards.map(monthlyCardPreview).join("")
-      : `<article class="empty-card"><strong>MONTHLY CARD 준비중</strong><p>월간 카드가 생성되면 이곳에 쌓입니다.</p></article>`;
+      : `<article class="empty-card"><strong>${activeCardScope === "quick" ? "QUICK MONTHLY CARD" : "MONTHLY CARD"} 준비중</strong><p>${activeCardScope === "quick" ? "퀵 월카드가 생성되면 이곳에 쌓입니다." : "월간 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
     return;
   }
-  const cards = userMatchCards();
+  const cards = visibleMatchCards();
   list.innerHTML = cards.length
     ? cards.map((card) => matchCardPreview(card)).join("")
-    : `<article class="empty-card"><strong>MATCH CARD 준비중</strong><p>공식 경기 카드가 생성되면 이곳에 쌓입니다.</p></article>`;
+    : `<article class="empty-card"><strong>${activeCardScope === "quick" ? "QUICK MATCH CARD" : "MATCH CARD"} 준비중</strong><p>${activeCardScope === "quick" ? "퀵 경기 카드가 생성되면 이곳에 쌓입니다." : "공식 경기 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
 }
 
 function renderFriends() {
@@ -4090,14 +4373,18 @@ function bindInteractions() {
     }
     const matchCardButton = event.target.closest("[data-match-card]");
     if (matchCardButton) {
-      const card = (window.PlaylogOfficialData?.playerMatchCards || [])
+      const source = activeCardScope === "quick"
+        ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+        : (window.PlaylogOfficialData?.playerMatchCards || []);
+      const card = source
         .find((item) => item.matchId === matchCardButton.dataset.matchCard && item.userId === matchCardButton.dataset.cardUser && isPublishedMatchCard(item));
       if (card) openSheet("cardView", card);
       return;
     }
     const monthlyCardButton = event.target.closest("[data-monthly-card]");
     if (monthlyCardButton) {
-      const card = userMonthlyCards().find((item) => item.monthKey === monthlyCardButton.dataset.monthlyCard);
+      const card = visibleMonthlyCards(monthlyCardButton.dataset.cardUser || currentUserId)
+        .find((item) => item.monthKey === monthlyCardButton.dataset.monthlyCard);
       if (card) openSheet("monthlyCardView", card);
       return;
     }
@@ -4140,7 +4427,7 @@ function bindInteractions() {
   });
   document.querySelector("#homePlayerCard").addEventListener("click", (event) => {
     if (event.target.closest("#avatarPicker")) return;
-    if (!recentOfficialCards(60).length) {
+    if (!recentOfficialCards(60).length && !latestQuickMatchCardForUser(currentUserId) && !latestQuickMonthlyCardForUser(currentUserId)) {
       showToast("아직 분석할 경기 기록이 없습니다.");
       return;
     }
@@ -4151,7 +4438,7 @@ function bindInteractions() {
   document.querySelector("#homePlayerCard").addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      if (!recentOfficialCards(60).length) {
+      if (!recentOfficialCards(60).length && !latestQuickMatchCardForUser(currentUserId) && !latestQuickMonthlyCardForUser(currentUserId)) {
         showToast("아직 분석할 경기 기록이 없습니다.");
         return;
       }
@@ -4162,6 +4449,12 @@ function bindInteractions() {
     activeCardTab = button.dataset.cardTab;
     renderCards();
   }));
+  document.addEventListener("click", (event) => {
+    const scopeButton = event.target.closest("[data-card-scope]");
+    if (!scopeButton) return;
+    activeCardScope = scopeButton.dataset.cardScope === "quick" ? "quick" : "official";
+    renderCards();
+  });
   document.querySelector("#officialCard")?.addEventListener("click", () => {
     if (!recentOfficialCards(60).length) {
       showToast("아직 분석할 경기 기록이 없습니다.");
@@ -4205,3 +4498,4 @@ bindInteractions();
   }
 })();
 
+  const quick = card.cardType === "quick";
