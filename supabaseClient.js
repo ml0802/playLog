@@ -1251,6 +1251,21 @@ async function deleteSelfReflection(reflection) {
   const id = reflection.id;
   const userId = reflection.userId || reflection.user_id;
   if (!id || !userId) throw new Error("deleteSelfReflection: reflection id and userId are required");
+  const deleteContext = { table, id, userId, reflectionType };
+  const { data: existingRows, error: lookupError } = await supabase
+    .from(table)
+    .select("id,user_id")
+    .eq("id", id);
+  if (lookupError) {
+    console.warn("[PlaylogSupabase] deleteSelfReflection lookup failed", { ...deleteContext, error: lookupError });
+  } else if (!existingRows?.length) {
+    console.warn("[PlaylogSupabase] deleteSelfReflection no row found by id", deleteContext);
+  } else if (!existingRows.some((row) => row.user_id === userId)) {
+    console.warn("[PlaylogSupabase] deleteSelfReflection user_id mismatch", {
+      ...deleteContext,
+      foundUserIds: existingRows.map((row) => row.user_id),
+    });
+  }
   const { data, error } = await supabase
     .from(table)
     .delete()
@@ -1262,6 +1277,10 @@ async function deleteSelfReflection(reflection) {
     throw error;
   }
   if (!Array.isArray(data) || data.length === 0) {
+    console.warn("[PlaylogSupabase] deleteSelfReflection deleted zero rows", {
+      ...deleteContext,
+      foundRows: existingRows || [],
+    });
     throw new Error(`deleteSelfReflection: no row deleted from ${table}. Check id/user_id and DELETE RLS policy.`);
   }
   removeSelfReflection(id, reflectionType);
