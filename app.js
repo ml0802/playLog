@@ -3408,9 +3408,10 @@ function renderEvaluation() {
     pane.innerHTML = `<h3 class="eval-subtitle focus-title">${positionLabel} 평가 <small>선택한 역할 기준</small></h3><div class="rating-list">${renderRatingFields(positionFields, "position", positionScores)}</div>${actions()}`;
   } else if (currentStep === 4) {
     pane.innerHTML = quick
-      ? `<h3 class="eval-subtitle">플레이유형 선택 <small>포지션별 1개 선택</small></h3>${renderQuickEvaluationPlayTypes(selectedPosition)}${actions("이전", "평가 저장 완료")}`
+      ? `<h3 class="eval-subtitle">플레이유형 선택 <small>포지션별 1개 선택</small></h3>${renderQuickEvaluationPlayTypes(selectedPosition)}${actions()}`
       : `
         <h3 class="eval-subtitle">플레이 성향 <small>선택 입력 · 1~10점</small></h3>
+        <p class="analysis-note">플레이유형을 더 정확하게 분석하기 위한 선택 평가입니다.<br>선택사항이며 건너뛰어도 괜찮습니다.</p>
         <div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, selectedTraits, traitScores, "trait")}</div>
         <h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3>
         <div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${selectedHighlights.includes(field.key) ? "selected" : ""}" data-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>
@@ -3598,7 +3599,7 @@ function renderEvaluation() {
       showToast("플레이유형을 선택해주세요.");
       return;
     }
-    if ((quick && currentStep === 4) || currentStep === 5) {
+    if (currentStep === 5) {
       const evaluation = buildEvaluation(`evaluation:ui:${Date.now()}`);
       let savedEvaluation = null;
       try {
