@@ -3954,7 +3954,6 @@ function exitReflectionSelectionMode() {
 function toggleReflectionSelection(reflectionId) {
   if (selectedReflectionIds.has(reflectionId)) selectedReflectionIds.delete(reflectionId);
   else selectedReflectionIds.add(reflectionId);
-  if (!selectedReflectionIds.size) reflectionSelectionMode = false;
   renderReflectionHistory();
 }
 
@@ -3971,13 +3970,12 @@ function renderReflectionHistory() {
     return;
   }
   selectedReflectionIds = new Set([...selectedReflectionIds].filter((id) => reflections.some((item) => item.id === id)));
-  if (!selectedReflectionIds.size) reflectionSelectionMode = false;
   history.innerHTML = `
     <div class="reflection-history-head">
       <h3>회고 히스토리</h3>
       ${reflectionSelectionMode
-        ? `<div class="reflection-selection-actions"><button class="secondary compact" data-reflection-selection-cancel type="button">취소</button><button class="primary danger compact" data-reflection-delete-selected type="button" ${selectedReflectionIds.size ? "" : "disabled"}>삭제</button></div>`
-        : ""}
+        ? `<div class="reflection-selection-actions"><span>${selectedReflectionIds.size}개 선택</span><button class="secondary compact" data-reflection-selection-cancel type="button">취소</button><button class="primary danger compact" data-reflection-delete-selected type="button" ${selectedReflectionIds.size ? "" : "disabled"}>삭제</button></div>`
+        : `<button class="reflection-more-button" data-reflection-selection-menu type="button" aria-label="회고 선택 모드 열기">⋮</button>`}
     </div>
     <div class="reflection-history-list">
       ${reflections.map((item) => {
@@ -3986,10 +3984,11 @@ function renderReflectionHistory() {
         const positionText = positionLabels[item.selectedPosition]?.[0] || item.selectedPosition || "-";
         const summary = item.nextGoal || item.memo || "아직 다음 목표를 정리하지 않았어요.";
         const selected = selectedReflectionIds.has(item.id);
-        return `<article class="reflection-history-card ${reflectionSelectionMode ? "selectable" : ""} ${selected ? "selected" : ""}" data-reflection-card="${item.id}"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span>${matchText}</span></div><p>${escapeHtml(summary)}</p></button>${reflectionSelectionMode ? `<span class="reflection-check" aria-hidden="true">${selected ? "✓" : ""}</span>` : `<button class="reflection-select-button" data-reflection-select-start="${item.id}" type="button" aria-label="회고 선택">선택</button>`}</article>`;
+        return `<article class="reflection-history-card ${reflectionSelectionMode ? "selectable" : ""} ${selected ? "selected" : ""}" data-reflection-card="${item.id}"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span>${matchText}</span></div><p>${escapeHtml(summary)}</p></button>${reflectionSelectionMode ? `<span class="reflection-check" aria-hidden="true">${selected ? "✓" : ""}</span>` : ""}</article>`;
       }).join("")}
     </div>
   `;
+  history.querySelector("[data-reflection-selection-menu]")?.addEventListener("click", () => enterReflectionSelectionMode());
   history.querySelector("[data-reflection-selection-cancel]")?.addEventListener("click", exitReflectionSelectionMode);
   history.querySelector("[data-reflection-delete-selected]")?.addEventListener("click", () => openReflectionDeleteConfirm([...selectedReflectionIds]));
   history.querySelectorAll("[data-reflection-detail]").forEach((button) => {
@@ -4003,12 +4002,6 @@ function renderReflectionHistory() {
         return;
       }
       openReflectionDetail(button.dataset.reflectionDetail);
-    });
-  });
-  history.querySelectorAll("[data-reflection-select-start]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      enterReflectionSelectionMode(button.dataset.reflectionSelectStart);
     });
   });
   history.querySelectorAll("[data-reflection-card]").forEach((card) => {
