@@ -1989,23 +1989,26 @@ function matchCardPreview(card, compact = false) {
 }
 
 function monthlyCardPreview(card) {
-  const [year, month] = card.monthKey.split("-");
+  const quick = card.cardType === "quick";
+  const monthKey = card.monthKey || "";
+  const [year = "", month = ""] = monthKey.split("-");
   const position = positionLabels[card.mainPosition]?.[0] || "-";
   const change = changeLabel(card.monthlyOVRChange);
+  const strengths = Array.isArray(card.strengthsSummary) ? card.strengthsSummary : [];
   const tags = [
-    `${Number(month)}월 ${card.matchCount}경기 기준`,
+    `${Number(month) || "-"}월 ${card.matchCount || 0}경기 기준`,
     position,
-    ...(card.strengthsSummary || []).slice(0, 1).map((item) => item.label),
+    ...strengths.slice(0, 1).map((item) => item.label),
   ];
   return `
     <button class="card-preview monthly-preview ${quick ? "quick-card-preview" : ""}" data-card-kind="monthly" data-monthly-card="${card.monthKey}" data-card-user="${card.userId}" type="button">
       <div class="card-preview-head">
         <span>${quick ? "QUICK MONTHLY CARD" : "MONTHLY CARD"}</span>
-        <small>${year}년 ${Number(month)}월 평균</small>
+        <small>${year || "-"}년 ${Number(month) || "-"}월 평균</small>
       </div>
       <div class="card-preview-main">
-        <div><strong>${card.monthKey}</strong><p>${position} · ${card.mainPlayStyle || "분석 준비중"}</p></div>
-        <b>${quick ? "QUICK OVR" : "OVR"} ${card.monthlyOVR}<em>${change}</em></b>
+        <div><strong>${monthKey || "월카드"}</strong><p>${position} · ${card.mainPlayStyle || "분석 준비중"}</p></div>
+        <b>${quick ? "QUICK OVR" : "OVR"} ${card.monthlyOVR ?? "-"}<em>${change}</em></b>
       </div>
       <div class="card-preview-tags">${tags.filter(Boolean).map((tag) => `<i>${tag}</i>`).join("")}</div>
     </button>
@@ -4501,9 +4504,19 @@ function renderCards() {
     renderBranch: isMonthlyTab ? "monthly" : "match",
   });
   if (isMonthlyTab) {
-    list.innerHTML = monthlyCards.length
-      ? monthlyCards.map(monthlyCardPreview).join("")
-      : `<article class="empty-card"><strong>${isQuickScope ? "QUICK MONTHLY CARD" : "MONTHLY CARD"} 준비중</strong><p>${isQuickScope ? "퀵 월카드가 생성되면 이곳에 쌓입니다." : "월간 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
+    try {
+      list.innerHTML = monthlyCards.length
+        ? monthlyCards.map(monthlyCardPreview).join("")
+        : `<article class="empty-card"><strong>${isQuickScope ? "QUICK MONTHLY CARD" : "MONTHLY CARD"} 준비중</strong><p>${isQuickScope ? "퀵 월카드가 생성되면 이곳에 쌓입니다." : "월간 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
+    } catch (error) {
+      console.warn("[PlaylogQA] monthly card render failed", {
+        activeCardTab,
+        activeCardScope,
+        visibleMonthlyCardsLength: monthlyCards.length,
+        error,
+      });
+      list.innerHTML = `<article class="empty-card"><strong>${isQuickScope ? "QUICK MONTHLY CARD" : "MONTHLY CARD"} 표시 오류</strong><p>월카드 데이터를 불러왔지만 화면에 표시하지 못했습니다. 새로고침 후 다시 시도해주세요.</p></article>`;
+    }
     return;
   }
   list.innerHTML = matchCards.length
