@@ -1483,6 +1483,13 @@ function visibleMonthlyCards(userId = currentUserId) {
   return activeCardScope === "quick" ? quickMonthlyCardsForUser(userId) : userMonthlyCards(userId);
 }
 
+function setCardState({ tab = activeCardTab, scope = activeCardScope } = {}) {
+  activeCardTab = tab === "monthly" ? "monthly" : "match";
+  activeCardScope = scope === "quick" ? "quick" : "official";
+  qaLog("setCardState", { activeCardTab, activeCardScope });
+  renderCards();
+}
+
 function latestHomeAnalysisCard() {
   const card = recentOfficialCards(60)[0];
   return card
@@ -3779,8 +3786,17 @@ function renderReflection() {
     renderReflection();
   }));
   pane.querySelectorAll("[data-self-rating-value]").forEach((button) => button.addEventListener("click", () => {
-    const scores = button.dataset.selfRatingCategory === "common" ? reflectionCommonScores : reflectionPositionScores;
+    const scores = ["common", "quick"].includes(button.dataset.selfRatingCategory)
+      ? reflectionCommonScores
+      : reflectionPositionScores;
     scores[button.dataset.selfRatingKey] = Number(button.dataset.selfRatingValue);
+    qaLog("reflectionSelfRatingClick", {
+      reflectionType,
+      category: button.dataset.selfRatingCategory,
+      key: button.dataset.selfRatingKey,
+      commonScores: reflectionCommonScores,
+      positionScores: reflectionPositionScores,
+    });
     updateRatingSelection(button, "[data-self-rating-value]");
     button.closest(".rating-card")?.classList.add("selected");
   }));
@@ -3828,6 +3844,13 @@ function renderReflection() {
     const reflectionPositionFields = reflectionType === "quick"
       ? [{ key: "positionPerformance" }]
       : evaluationFields.position[reflectionPosition];
+    qaLog("reflectionValidation", {
+      reflectionType,
+      reflectionStep,
+      commonKeys: reflectionCommonFields.map((field) => field.key),
+      commonScores: reflectionCommonScores,
+      positionScores: reflectionPositionScores,
+    });
     if (reflectionStep === 1 && !hasAllScores(reflectionCommonFields, reflectionCommonScores)) {
       showToast("공통 자가평가를 모두 선택해주세요.");
       return;
@@ -4252,6 +4275,8 @@ function renderNewMatch() {
 }
 
 function renderCards() {
+  activeCardTab = activeCardTab === "monthly" ? "monthly" : "match";
+  activeCardScope = activeCardScope === "quick" ? "quick" : "official";
   const segments = document.querySelector(".card-segments");
   if (segments && !document.querySelector(".card-scope-segments")) {
     segments.insertAdjacentHTML("afterend", `
@@ -4264,9 +4289,19 @@ function renderCards() {
   }
   document.querySelectorAll("[data-card-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.cardTab === activeCardTab);
+    button.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setCardState({ tab: button.dataset.cardTab, scope: activeCardScope });
+    };
   });
   document.querySelectorAll("[data-card-scope]").forEach((button) => {
     button.classList.toggle("active", button.dataset.cardScope === activeCardScope);
+    button.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setCardState({ tab: activeCardTab, scope: button.dataset.cardScope });
+    };
   });
   const note = document.querySelector("#cardScopeNote");
   if (note) {
@@ -4283,14 +4318,16 @@ function renderCards() {
     quickMatchCount: quickMatchCardsForUser().length,
     quickMonthlyCount: quickMonthlyCardsForUser().length,
   });
-  if (activeCardTab === "monthly") {
-    const monthlyCards = visibleMonthlyCards();
+  const isMonthlyTab = activeCardTab === "monthly";
+  const isQuickScope = activeCardScope === "quick";
+  if (isMonthlyTab) {
+    const monthlyCards = isQuickScope ? quickMonthlyCardsForUser() : userMonthlyCards();
     list.innerHTML = monthlyCards.length
       ? monthlyCards.map(monthlyCardPreview).join("")
-      : `<article class="empty-card"><strong>${activeCardScope === "quick" ? "QUICK MONTHLY CARD" : "MONTHLY CARD"} 준비중</strong><p>${activeCardScope === "quick" ? "퀵 월카드가 생성되면 이곳에 쌓입니다." : "월간 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
+      : `<article class="empty-card"><strong>${isQuickScope ? "QUICK MONTHLY CARD" : "MONTHLY CARD"} 준비중</strong><p>${isQuickScope ? "퀵 월카드가 생성되면 이곳에 쌓입니다." : "월간 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
     return;
   }
-  const cards = visibleMatchCards();
+  const cards = isQuickScope ? quickMatchCardsForUser() : userMatchCards();
   list.innerHTML = cards.length
     ? cards.map((card) => matchCardPreview(card)).join("")
     : `<article class="empty-card"><strong>${activeCardScope === "quick" ? "QUICK MATCH CARD" : "MATCH CARD"} 준비중</strong><p>${activeCardScope === "quick" ? "퀵 경기 카드가 생성되면 이곳에 쌓입니다." : "공식 경기 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
@@ -4479,16 +4516,14 @@ function bindInteractions() {
   document.addEventListener("click", (event) => {
     const tabButton = event.target.closest("[data-card-tab]");
     if (tabButton) {
-      activeCardTab = tabButton.dataset.cardTab === "monthly" ? "monthly" : "match";
-      qaLog("cardTabClick", { activeCardTab, activeCardScope });
-      renderCards();
+      event.preventDefault();
+      setCardState({ tab: tabButton.dataset.cardTab, scope: activeCardScope });
       return;
     }
     const scopeButton = event.target.closest("[data-card-scope]");
     if (!scopeButton) return;
-    activeCardScope = scopeButton.dataset.cardScope === "quick" ? "quick" : "official";
-    qaLog("cardScopeClick", { activeCardTab, activeCardScope });
-    renderCards();
+    event.preventDefault();
+    setCardState({ tab: activeCardTab, scope: scopeButton.dataset.cardScope });
   });
   document.querySelector("#officialCard")?.addEventListener("click", () => {
     if (!recentOfficialCards(60).length) {
