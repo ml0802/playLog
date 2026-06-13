@@ -3208,6 +3208,11 @@ function renderStepper() {
 function enterEvaluationFlow(match) {
   evaluationMode = "flow";
   selectedMatchId = match.id;
+  qaLog("enterEvaluationFlow", {
+    matchId: selectedMatchId,
+    matchType: matchType(match),
+    currentUserId,
+  });
   const remaining = matchRemainingTargets(match);
   if (match.status === "published") {
     openMatchResultView("summary");
@@ -3323,6 +3328,7 @@ function renderEvaluation() {
       .map((player) => player.userId),
   );
   const match = activeMatchRecord();
+  const quick = isQuickMatch(match);
   const remaining = window.PlaylogOfficialData?.getRemainingEvaluationTargets?.(selectedMatchId, currentUserId) || [];
   const storedPOMVote = window.PlaylogOfficialData?.getMatchAwardVote?.(selectedMatchId, currentUserId, "pom")
     || window.PlaylogOfficialData?.getPOMVote?.(selectedMatchId, currentUserId);
@@ -3346,7 +3352,13 @@ function renderEvaluation() {
   document.querySelector("#currentTarget").textContent = selectedTargetLabel;
   document.querySelector(".eval-target").classList.remove("pulse");
   requestAnimationFrame(() => document.querySelector(".eval-target").classList.add("pulse"));
-  document.querySelector("#stepTitle").textContent = isAwardStep ? "경기 투표" : currentStep >= 6 ? "평가 저장 완료" : flowSteps[currentStep];
+  document.querySelector("#stepTitle").textContent = isAwardStep
+    ? "경기 투표"
+    : currentStep >= 6
+      ? "평가 저장 완료"
+      : quick && currentStep === 4
+        ? "플레이유형 선택"
+        : flowSteps[currentStep];
   document.querySelector("#stepHelp").textContent = isAwardStep
     ? "두 선택은 OVR에 영향 없이 결과 공개 때 함께 보여집니다."
     : currentStep === 2 ? "평균은 6점입니다." : quick ? "퀵 평가는 퀵 카드에만 반영됩니다." : "공식 선수카드는 동료 평가만 반영합니다.";
@@ -3372,12 +3384,14 @@ function renderEvaluation() {
       : selectedPosition ? evaluationFields.position[selectedPosition] : [];
     pane.innerHTML = `<h3 class="eval-subtitle focus-title">${positionLabel} 평가 <small>선택한 역할 기준</small></h3><div class="rating-list">${renderRatingFields(positionFields, "position", positionScores)}</div>${actions()}`;
   } else if (currentStep === 4) {
-    pane.innerHTML = `
-      <h3 class="eval-subtitle">플레이 성향 <small>선택 입력 · 1~10점</small></h3>
-      <div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, selectedTraits, traitScores, "trait")}</div>
-      <h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3>
-      <div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${selectedHighlights.includes(field.key) ? "selected" : ""}" data-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>
-      ${selectionActions()}`;
+    pane.innerHTML = quick
+      ? `<h3 class="eval-subtitle">플레이유형 선택 <small>포지션별 1개 선택</small></h3>${renderQuickEvaluationPlayTypes(selectedPosition)}${actions("이전", "평가 저장 완료")}`
+      : `
+        <h3 class="eval-subtitle">플레이 성향 <small>선택 입력 · 1~10점</small></h3>
+        <div class="rating-list trait-rating-list">${renderTraitRatingFields(evaluationFields.traits, selectedTraits, traitScores, "trait")}</div>
+        <h3 class="eval-subtitle observation">오늘 눈에 띈 특징 <small>최대 2개</small></h3>
+        <div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${selectedHighlights.includes(field.key) ? "selected" : ""}" data-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>
+        ${selectionActions()}`;
   } else if (currentStep === 5) {
     const previewCard = window.PlaylogEngine.generatePlayerMatchCard({
       matchId: selectedMatchId,
@@ -3499,6 +3513,15 @@ function renderEvaluation() {
     updateRatingSelection(button, "[data-trait-value]");
     button.closest(".rating-card")?.classList.add("selected");
   }));
+  pane.querySelectorAll("[data-quick-evaluation-play-type]").forEach((button) => button.addEventListener("click", () => {
+    const playType = button.dataset.quickEvaluationPlayType;
+    selectedTraits = playType ? [playType] : [];
+    traitScores = {};
+    pane.querySelectorAll("[data-quick-evaluation-play-type]").forEach((item) => {
+      item.classList.toggle("selected", item === button);
+    });
+    showToast(`${playType} 선택`);
+  }));
   pane.querySelectorAll("[data-highlight]").forEach((button) => button.addEventListener("click", () => {
     const key = button.dataset.highlight;
     if (!selectedHighlights.includes(key) && selectedHighlights.length >= 2) {
@@ -3548,7 +3571,11 @@ function renderEvaluation() {
       showToast("포지션 평가를 모두 선택해주세요.");
       return;
     }
-    if (currentStep === 5) {
+    if (quick && currentStep === 4 && !selectedTraits[0]) {
+      showToast("플레이유형을 선택해주세요.");
+      return;
+    }
+    if ((quick && currentStep === 4) || currentStep === 5) {
       const evaluation = buildEvaluation(`evaluation:ui:${Date.now()}`);
       let savedEvaluation = null;
       try {
@@ -3707,6 +3734,14 @@ function renderQuickReflectionPlayTypes(position = "free") {
   return `<div class="selector-grid">${options.map(([label, description]) => {
     const selected = reflectionTraits[0] === label;
     return `<button class="choice-card ${selected ? "selected" : ""}" data-quick-reflection-play-type="${escapeHtml(label)}" type="button"><strong>${escapeHtml(label)}</strong><br><small>${escapeHtml(description)}</small></button>`;
+  }).join("")}</div>`;
+}
+
+function renderQuickEvaluationPlayTypes(position = "free") {
+  const options = playTypesForPosition(position);
+  return `<div class="selector-grid">${options.map(([label, description]) => {
+    const selected = selectedTraits[0] === label;
+    return `<button class="choice-card ${selected ? "selected" : ""}" data-quick-evaluation-play-type="${escapeHtml(label)}" type="button"><strong>${escapeHtml(label)}</strong><br><small>${escapeHtml(description)}</small></button>`;
   }).join("")}</div>`;
 }
 
@@ -4762,5 +4797,3 @@ bindInteractions();
     setView("auth");
   }
 })();
-
-  const quick = card.cardType === "quick";
