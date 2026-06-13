@@ -450,6 +450,10 @@ async function saveSelfReflectionAsync(payload) {
   return requireSupabaseBridge().saveSelfReflection(payload);
 }
 
+async function deleteSelfReflectionAsync(payload) {
+  return requireSupabaseBridge().deleteSelfReflection(payload);
+}
+
 function withUpsertedCard(cards, card) {
   const nextCards = (cards || []).filter((item) => item && item.id !== card.id);
   nextCards.push(card);
@@ -620,6 +624,7 @@ function disableLocalAwardVoteFallback() {
 function disableLocalSelfReflectionFallback() {
   if (!window.PlaylogOfficialData) return;
   window.PlaylogOfficialData.saveSelfReflection = async (payload) => saveSelfReflectionAsync(payload);
+  window.PlaylogOfficialData.deleteSelfReflection = async (payload) => deleteSelfReflectionAsync(payload);
 }
 
 async function updateUserStatusAsync(userId, status, approvedAt = null) {
@@ -3911,13 +3916,30 @@ function renderSelfRatingFields(fields, category, ratings) {
   return fields.map((field) => `<article class="rating-card ${Number.isFinite(ratings[field.key]) ? "selected" : ""}"><div class="rating-copy"><strong>${field.label}</strong><small>${field.description || "퀵 평가 기준"}</small></div><div class="rating-picks" role="group" aria-label="${field.label} 자가 평가">${Array.from({ length: 10 }, (_, index) => index + 1).map((value) => `<button class="${value === ratings[field.key] ? "selected" : ""}" data-self-rating-category="${category}" data-self-rating-key="${field.key}" data-self-rating-value="${value}" type="button">${value}</button>`).join("")}</div></article>`).join("");
 }
 
+function allSelfReflections() {
+  return [
+    ...(window.PlaylogOfficialData?.selfReflections || []),
+    ...(window.PlaylogOfficialData?.quickSelfReflections || []),
+  ];
+}
+
+function selfReflectionById(reflectionId) {
+  return allSelfReflections().find((item) => item.id === reflectionId);
+}
+
+function removeSelfReflectionFromLocal(reflection) {
+  const collection = reflection.reflectionType === "quick"
+    ? window.PlaylogOfficialData?.quickSelfReflections
+    : window.PlaylogOfficialData?.selfReflections;
+  if (!Array.isArray(collection)) return;
+  const index = collection.findIndex((item) => item.id === reflection.id);
+  if (index >= 0) collection.splice(index, 1);
+}
+
 function renderReflectionHistory() {
   const history = document.querySelector("#reflectionHistory");
   if (!history) return;
-  const reflections = [
-    ...(window.PlaylogOfficialData?.selfReflections || []),
-    ...(window.PlaylogOfficialData?.quickSelfReflections || []),
-  ]
+  const reflections = allSelfReflections()
     .filter((item) => item.userId === currentUserId)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   if (!reflections.length) {
@@ -3932,20 +3954,53 @@ function renderReflectionHistory() {
         const matchText = item.reflectionType === "quick" ? "퀵 회고" : item.matchId ? "경기 연결" : "빠른 회고";
         const positionText = positionLabels[item.selectedPosition]?.[0] || item.selectedPosition || "-";
         const summary = item.nextGoal || item.memo || "아직 다음 목표를 정리하지 않았어요.";
-        return `<button class="reflection-history-card" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span>${matchText}</span></div><p>${escapeHtml(summary)}</p></button>`;
+        return `<article class="reflection-history-card"><button class="reflection-history-main" data-reflection-detail="${item.id}" type="button"><div><strong>${date} · ${positionText} · 만족도 ${item.satisfactionScore || "-"}</strong><span>${matchText}</span></div><p>${escapeHtml(summary)}</p></button><button class="reflection-delete-button" data-reflection-delete="${item.id}" type="button" aria-label="회고 삭제">삭제</button></article>`;
       }).join("")}
     </div>
   `;
   history.querySelectorAll("[data-reflection-detail]").forEach((button) => {
     button.addEventListener("click", () => openReflectionDetail(button.dataset.reflectionDetail));
   });
+  history.querySelectorAll("[data-reflection-delete]").forEach((button) => {
+    button.addEventListener("click", () => openReflectionDeleteConfirm(button.dataset.reflectionDelete));
+  });
+}
+
+function openReflectionDeleteConfirm(reflectionId) {
+  const reflection = selfReflectionById(reflectionId);
+  if (!reflection) return;
+  const overlay = document.querySelector("#overlay");
+  const sheet = document.querySelector("#sheet");
+  sheet.className = "sheet reflection-delete-sheet";
+  sheet.innerHTML = `
+    <div class="result-title reflection-detail-title">
+      <h3>회고 삭제</h3>
+      <button data-close-sheet type="button" aria-label="회고 삭제 닫기">×</button>
+    </div>
+    <p class="delete-confirm-copy">이 회고를 삭제할까요? 삭제 후 복구할 수 없습니다.</p>
+    <div class="eval-actions">
+      <button class="secondary" data-close-sheet type="button">취소</button>
+      <button class="primary danger" data-confirm-reflection-delete="${reflection.id}" type="button">삭제</button>
+    </div>
+  `;
+  sheet.querySelectorAll("[data-close-sheet]").forEach((button) => button.addEventListener("click", closeSheet));
+  sheet.querySelector("[data-confirm-reflection-delete]")?.addEventListener("click", async () => {
+    try {
+      await deleteSelfReflectionAsync(reflection);
+    } catch (error) {
+      reportSupabaseError(error, "Supabase 회고 삭제 실패");
+      return;
+    }
+    removeSelfReflectionFromLocal(reflection);
+    closeSheet();
+    renderReflectionHistory();
+    showToast("회고를 삭제했습니다.");
+  });
+  overlay.hidden = false;
 }
 
 function openReflectionDetail(reflectionId) {
-  const reflection = [
-    ...(window.PlaylogOfficialData?.selfReflections || []),
-    ...(window.PlaylogOfficialData?.quickSelfReflections || []),
-  ].find((item) => item.id === reflectionId);
+  const reflection = selfReflectionById(reflectionId);
   if (!reflection) return;
   const overlay = document.querySelector("#overlay");
   const sheet = document.querySelector("#sheet");

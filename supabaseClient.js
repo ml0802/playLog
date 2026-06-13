@@ -611,6 +611,13 @@ function mergeSelfReflections(reflections = []) {
   });
 }
 
+function removeSelfReflection(reflectionId, reflectionType = "official") {
+  const data = officialData();
+  const collection = reflectionType === "quick" ? data.quickSelfReflections : data.selfReflections;
+  const index = collection.findIndex((item) => item.id === reflectionId);
+  if (index >= 0) collection.splice(index, 1);
+}
+
 function replaceCardsForUsers(userIds = [], { matchCards = [], currentStats = [], monthlyCards = [], quickMatchCards = [], quickMonthlyCards = [] } = {}) {
   const data = officialData();
   const userIdSet = new Set(userIds);
@@ -1237,6 +1244,22 @@ async function saveSelfReflection(reflection) {
   return saved;
 }
 
+async function deleteSelfReflection(reflection) {
+  assertClient();
+  const table = reflection.reflectionType === "quick" ? "quick_self_reflections" : "self_reflections";
+  const { error } = await supabase
+    .from(table)
+    .delete()
+    .eq("id", reflection.id)
+    .eq("user_id", reflection.userId);
+  if (error) {
+    reportSupabaseQueryError("deleteSelfReflection:deleteSelfReflection", error);
+    throw error;
+  }
+  removeSelfReflection(reflection.id, reflection.reflectionType);
+  return { id: reflection.id, reflectionType: reflection.reflectionType };
+}
+
 async function refreshPlayerCards(userId) {
   assertClient();
   const { data: participantRows, error: participantsError } = await supabase
@@ -1389,6 +1412,7 @@ window.PlaylogSupabase = {
   saveMatchAwardVote,
   refreshSelfReflections,
   saveSelfReflection,
+  deleteSelfReflection,
   refreshPlayerCards,
   upsertGeneratedCards,
   bootstrapUserData,
