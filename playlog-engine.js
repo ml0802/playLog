@@ -120,13 +120,13 @@
     .map(([position, fields]) => [position, fields.map((field) => field.key)]));
   const QUICK_EVALUATION_FIELDS = {
     common: [
-      { key: "activity", label: "활동량", mapsTo: ["activity", "stamina"] },
-      { key: "pass", label: "패스", mapsTo: ["stablePass", "buildUp"] },
-      { key: "ballControl", label: "볼 컨트롤", mapsTo: ["firstTouch", "dribbleImpact"] },
-      { key: "decision", label: "판단력", mapsTo: ["decision", "composure"] },
-      { key: "gameUnderstanding", label: "경기 이해도", mapsTo: ["offTheBall", "concentration"] },
+      { key: "activity", label: "활동량", description: "경기 내 움직임, 압박 참여, 체력 유지력을 함께 봅니다. 기존 활동량 + 체력 항목을 압축한 평가입니다.", mapsTo: ["activity", "stamina"] },
+      { key: "pass", label: "패스", description: "패스 안정성과 빌드업 기여도를 함께 봅니다. 기존 안정적 패스 + 빌드업 능력 항목을 압축한 평가입니다.", mapsTo: ["stablePass", "buildUp"] },
+      { key: "ballControl", label: "볼 컨트롤", description: "첫 터치, 볼 소유 안정성, 드리블 영향력을 함께 봅니다. 기존 퍼스트터치 + 드리블 영향력 항목을 압축한 평가입니다.", mapsTo: ["firstTouch", "dribbleImpact"] },
+      { key: "decision", label: "판단력", description: "압박 상황에서의 선택, 침착한 의사결정을 함께 봅니다. 기존 판단력 + 침착성 항목을 압축한 평가입니다.", mapsTo: ["decision", "composure"] },
+      { key: "gameUnderstanding", label: "경기 이해도", description: "오프더볼 움직임, 위치선정, 집중력을 함께 봅니다. 기존 오프더볼 + 집중력 항목을 압축한 평가입니다.", mapsTo: ["offTheBall", "concentration"] },
     ],
-    positionPerformance: { key: "positionPerformance", label: "포지션 수행도" },
+    positionPerformance: { key: "positionPerformance", label: "포지션 수행도", description: "선택한 포지션 역할을 얼마나 잘 수행했는지 평가합니다. 기존 포지션별 세부 평가 5개를 압축한 평가입니다." },
   };
   const LABELS = {
     activity: "활동량", decision: "판단력", stablePass: "안정적 패스", buildUp: "빌드업 능력",

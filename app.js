@@ -1974,7 +1974,7 @@ function matchCardPreview(card, compact = false) {
   const tags = cardTagItems(card).slice(0, compact ? 2 : 3);
   const quick = card.cardType === "quick";
   return `
-    <button class="card-preview match-preview ${quick ? "quick-card-preview" : ""}" data-card-kind="match" data-match-card="${card.matchId}" data-card-user="${card.userId}" type="button">
+    <button class="card-preview match-preview ${quick ? "quick-card-preview" : ""}" data-card-kind="${quick ? "quick-match" : "match"}" data-match-card="${card.matchId}" data-card-user="${card.userId}" type="button">
       <div class="card-preview-head">
         <span>${quick ? "QUICK MATCH CARD" : "MATCH CARD"}</span>
         <small>${matchDate(card)}</small>
@@ -2001,7 +2001,7 @@ function monthlyCardPreview(card) {
     ...strengths.slice(0, 1).map((item) => item.label),
   ];
   return `
-    <button class="card-preview monthly-preview ${quick ? "quick-card-preview" : ""}" data-card-kind="monthly" data-monthly-card="${card.monthKey}" data-card-user="${card.userId}" type="button">
+    <button class="card-preview monthly-preview ${quick ? "quick-card-preview" : ""}" data-card-kind="${quick ? "quick-monthly" : "monthly"}" data-monthly-card="${card.monthKey}" data-card-user="${card.userId}" type="button">
       <div class="card-preview-head">
         <span>${quick ? "QUICK MONTHLY CARD" : "MONTHLY CARD"}</span>
         <small>${year || "-"}년 ${Number(month) || "-"}월 평균</small>
@@ -2080,6 +2080,15 @@ function quickScoreItems(sourceItems = [], position = "free") {
     { key: "gameUnderstanding", label: "경기 이해도", score: value(["offTheBall", "concentration"]) },
     { key: "positionPerformance", label: "포지션 수행도", score: value((evaluationFields.position[position] || []).map((field) => field.key)) },
   ];
+}
+
+function quickRadarStats(sourceItems = [], position = "free") {
+  return quickScoreItems(sourceItems, position).map((item) => [item.label, Number.isFinite(item.score) ? item.score : "-"]);
+}
+
+function quickMonthlyRadarStats(card, monthlyScores) {
+  const scores = monthlyScores || averagedAnalysisScores(quickMonthlyMatchCards(card));
+  return quickRadarStats(scores, card.mainPosition);
 }
 
 function reportScoreBlock(title, items) {
@@ -2284,7 +2293,7 @@ function matchCardViewTemplate(card, options = {}) {
     tags: [roleInfo.type, ...cardTagItems(card)].slice(0, 3),
     basis: "해당 경기 기준",
     detailLabel: quick ? "퀵 상세 리포트 보기" : "상세 리포트 보기",
-    detailKind: "card",
+    detailKind: quick ? "quickCard" : "card",
     payloadKey: `${card.matchId}::${card.userId}`,
     allowDetail: options.allowDetail !== false,
     showHeader: options.showHeader !== false,
@@ -2315,7 +2324,7 @@ function monthlyCardViewTemplate(card) {
     ].slice(0, 3),
     basis: `${year}년 ${Number(month)}월 ${quick ? "퀵" : "전체"} 경기 단순 평균 · 가중치 없음`,
     detailLabel: "월간 리포트 보기",
-    detailKind: "monthlyReport",
+    detailKind: quick ? "quickMonthlyReport" : "monthlyReport",
     payloadKey: `${card.userId}::${card.monthKey}`,
   });
 }
@@ -2339,7 +2348,10 @@ function officialAnalysisTemplate(card) {
   const positionFields = evaluationFields.position[card.mainEvaluatedPosition] || [];
   const positionItems = scoreItemsForFields(card.analysisScores || [], positionFields);
   const traitItems = averagedTraitItems(evaluations);
-  const analysisSections = hasAnalysisComparison ? `
+  const radarItems = quick
+    ? quickRadarStats(card.analysisScores || [], card.mainEvaluatedPosition)
+    : playerCurrentRadarStats(card);
+  const analysisSections = hasAnalysisComparison && !quick ? `
       ${hasSmallOnlyChanges ? `<p class="analysis-note">전 경기 대비 큰 변화는 없지만, 세부 항목의 소폭 변화를 표시합니다.</p>` : ""}
       <div class="result-section up">
         <div class="result-section-head">전 경기 대비 상승 TOP3 <span>↗</span></div>
@@ -2377,10 +2389,10 @@ function officialAnalysisTemplate(card) {
         <strong>${card.playStyle || "분석 준비중"}</strong>
         <small>${matchTitle(card)} · ${matchDate(card)}</small>
       </div>
-      <div class="report-radar">${playerCurrentRadarStats(card).map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
+      <div class="report-radar">${radarItems.map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
       ${reportScoreBlock(quick ? "퀵 평가 전체" : "공통 평가 전체", commonItems)}
       ${quick ? "" : reportScoreBlock("포지션 평가 전체", positionItems)}
-      ${reportScoreBlock("선택 평가 전체", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
+      ${quick ? "" : reportScoreBlock("선택 평가 전체", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
       ${positionIdentityTemplate(card)}
       ${analysisSections}
       <div class="style-change">
@@ -2458,6 +2470,7 @@ function monthlyReportTemplate(card) {
   const positionItems = scoreItemsForFields(monthlyScores, evaluationFields.position[card.mainPosition] || []);
   const monthlyEvaluations = matchCards.flatMap((matchCard) => activeEvaluationsForCard(matchCard));
   const traitItems = averagedTraitItems(monthlyEvaluations);
+  const radarItems = quick ? quickMonthlyRadarStats(card, monthlyScores) : playerCurrentRadarStats(card);
   const weaknesses = (card.weaknessesSummary || []).slice(0, 3).map((item) => `<i>${item.label}</i>`).join("");
   return `
     <div class="result-title">
@@ -2474,7 +2487,7 @@ function monthlyReportTemplate(card) {
       <strong>${card.mainPlayStyle || "분석 준비중"}</strong>
       <small>${position} · 월 단위 누적 평균 · 가중치 없음</small>
     </div>
-    <div class="report-radar">${playerCurrentRadarStats(card).map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
+    <div class="report-radar">${radarItems.map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
     ${reportScoreBlock(quick ? "퀵 평가 평균" : "월간 공통평가 평균", commonItems)}
     ${quick ? "" : reportScoreBlock("월간 포지션평가 평균", positionItems)}
     ${quick ? "" : reportScoreBlock("월간 선택평가 평균", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
@@ -2984,17 +2997,23 @@ function openSheet(kind, payload = null) {
   sheet.querySelector("[data-open-match-result-summary]")?.addEventListener("click", () => openSheet("matchResult"));
   sheet.querySelectorAll("[data-open-detail]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.dataset.openDetail === "card") {
+      if (button.dataset.openDetail === "card" || button.dataset.openDetail === "quickCard") {
         const [matchId, userId] = button.dataset.detailKey.split("::");
-        const card = (window.PlaylogOfficialData?.playerMatchCards || [])
+        const source = button.dataset.openDetail === "quickCard"
+          ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+          : (window.PlaylogOfficialData?.playerMatchCards || []);
+        const card = source
           .find((item) => item.matchId === matchId && item.userId === userId && isPublishedMatchCard(item));
         if (card) openSheet("card", card);
       }
-      if (button.dataset.openDetail === "monthlyReport") {
+      if (button.dataset.openDetail === "monthlyReport" || button.dataset.openDetail === "quickMonthlyReport") {
         const [userId, monthKey] = button.dataset.detailKey.includes("::")
           ? button.dataset.detailKey.split("::")
           : [currentUserId, button.dataset.detailKey];
-        const card = userMonthlyCards(userId).find((item) => item.monthKey === monthKey);
+        const source = button.dataset.openDetail === "quickMonthlyReport"
+          ? quickMonthlyCardsForUser(userId)
+          : userMonthlyCards(userId);
+        const card = source.find((item) => item.monthKey === monthKey);
         if (card) openSheet("monthlyReport", card);
       }
     });
@@ -3380,7 +3399,11 @@ function renderEvaluation() {
   } else if (currentStep === 3) {
     const positionLabel = positions.find(([key]) => key === selectedPosition)?.[1] || "포지션";
     const positionFields = quick
-      ? [{ key: "positionPerformance", label: "포지션 수행도", description: `${positionLabel} 역할을 얼마나 잘 수행했는지` }]
+      ? [{
+        key: quickEvaluationFields.positionPerformance.key,
+        label: quickEvaluationFields.positionPerformance.label,
+        description: quickEvaluationFields.positionPerformance.description || `${positionLabel} 역할을 얼마나 잘 수행했는지`,
+      }]
       : selectedPosition ? evaluationFields.position[selectedPosition] : [];
     pane.innerHTML = `<h3 class="eval-subtitle focus-title">${positionLabel} 평가 <small>선택한 역할 기준</small></h3><div class="rating-list">${renderRatingFields(positionFields, "position", positionScores)}</div>${actions()}`;
   } else if (currentStep === 4) {
