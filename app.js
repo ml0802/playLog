@@ -1974,7 +1974,7 @@ function matchCardPreview(card, compact = false) {
   const tags = cardTagItems(card).slice(0, compact ? 2 : 3);
   const quick = card.cardType === "quick";
   return `
-    <button class="card-preview match-preview ${quick ? "quick-card-preview" : ""}" data-match-card="${card.matchId}" data-card-user="${card.userId}" type="button">
+    <button class="card-preview match-preview ${quick ? "quick-card-preview" : ""}" data-card-kind="match" data-match-card="${card.matchId}" data-card-user="${card.userId}" type="button">
       <div class="card-preview-head">
         <span>${quick ? "QUICK MATCH CARD" : "MATCH CARD"}</span>
         <small>${matchDate(card)}</small>
@@ -1998,7 +1998,7 @@ function monthlyCardPreview(card) {
     ...(card.strengthsSummary || []).slice(0, 1).map((item) => item.label),
   ];
   return `
-    <button class="card-preview monthly-preview ${quick ? "quick-card-preview" : ""}" data-monthly-card="${card.monthKey}" data-card-user="${card.userId}" type="button">
+    <button class="card-preview monthly-preview ${quick ? "quick-card-preview" : ""}" data-card-kind="monthly" data-monthly-card="${card.monthKey}" data-card-user="${card.userId}" type="button">
       <div class="card-preview-head">
         <span>${quick ? "QUICK MONTHLY CARD" : "MONTHLY CARD"}</span>
         <small>${year}년 ${Number(month)}월 평균</small>
@@ -4485,6 +4485,10 @@ function renderCards() {
       : "공식 경기는 OVR과 현재폼에 반영됩니다.";
   }
   const list = document.querySelector("#cardList");
+  const isMonthlyTab = activeCardTab === "monthly";
+  const isQuickScope = activeCardScope === "quick";
+  const monthlyCards = visibleMonthlyCards();
+  const matchCards = visibleMatchCards();
   qaLog("renderCards", {
     activeCardTab,
     activeCardScope,
@@ -4492,19 +4496,18 @@ function renderCards() {
     officialMonthlyCount: userMonthlyCards().length,
     quickMatchCount: quickMatchCardsForUser().length,
     quickMonthlyCount: quickMonthlyCardsForUser().length,
+    visibleMatchCardsLength: matchCards.length,
+    visibleMonthlyCardsLength: monthlyCards.length,
+    renderBranch: isMonthlyTab ? "monthly" : "match",
   });
-  const isMonthlyTab = activeCardTab === "monthly";
-  const isQuickScope = activeCardScope === "quick";
   if (isMonthlyTab) {
-    const monthlyCards = isQuickScope ? quickMonthlyCardsForUser() : userMonthlyCards();
     list.innerHTML = monthlyCards.length
       ? monthlyCards.map(monthlyCardPreview).join("")
       : `<article class="empty-card"><strong>${isQuickScope ? "QUICK MONTHLY CARD" : "MONTHLY CARD"} 준비중</strong><p>${isQuickScope ? "퀵 월카드가 생성되면 이곳에 쌓입니다." : "월간 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
     return;
   }
-  const cards = isQuickScope ? quickMatchCardsForUser() : userMatchCards();
-  list.innerHTML = cards.length
-    ? cards.map((card) => matchCardPreview(card)).join("")
+  list.innerHTML = matchCards.length
+    ? matchCards.map((card) => matchCardPreview(card)).join("")
     : `<article class="empty-card"><strong>${activeCardScope === "quick" ? "QUICK MATCH CARD" : "MATCH CARD"} 준비중</strong><p>${activeCardScope === "quick" ? "퀵 경기 카드가 생성되면 이곳에 쌓입니다." : "공식 경기 카드가 생성되면 이곳에 쌓입니다."}</p></article>`;
 }
 
@@ -4614,21 +4617,25 @@ function bindInteractions() {
       if (card) openSheet("monthlyCardView", card);
       return;
     }
+    const monthlyCardButton = event.target.closest("[data-monthly-card]");
+    if (monthlyCardButton) {
+      const inCardList = Boolean(monthlyCardButton.closest("#cardList"));
+      if (inCardList && activeCardTab !== "monthly") return;
+      const card = visibleMonthlyCards(monthlyCardButton.dataset.cardUser || currentUserId)
+        .find((item) => item.monthKey === monthlyCardButton.dataset.monthlyCard);
+      if (card) openSheet("monthlyCardView", card);
+      return;
+    }
     const matchCardButton = event.target.closest("[data-match-card]");
     if (matchCardButton) {
+      const inCardList = Boolean(matchCardButton.closest("#cardList"));
+      if (inCardList && activeCardTab !== "match") return;
       const source = activeCardScope === "quick"
         ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
         : (window.PlaylogOfficialData?.playerMatchCards || []);
       const card = source
         .find((item) => item.matchId === matchCardButton.dataset.matchCard && item.userId === matchCardButton.dataset.cardUser && isPublishedMatchCard(item));
       if (card) openSheet("cardView", card);
-      return;
-    }
-    const monthlyCardButton = event.target.closest("[data-monthly-card]");
-    if (monthlyCardButton) {
-      const card = visibleMonthlyCards(monthlyCardButton.dataset.cardUser || currentUserId)
-        .find((item) => item.monthKey === monthlyCardButton.dataset.monthlyCard);
-      if (card) openSheet("monthlyCardView", card);
       return;
     }
     const toastButton = event.target.closest("[data-toast]");
