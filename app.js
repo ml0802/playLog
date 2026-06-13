@@ -2390,7 +2390,7 @@ function officialAnalysisTemplate(card) {
         <small>${matchTitle(card)} · ${matchDate(card)}</small>
       </div>
       <div class="report-radar">${radarItems.map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
-      ${reportScoreBlock(quick ? "퀵 평가 전체" : "공통 평가 전체", commonItems)}
+      ${quick ? "" : reportScoreBlock("공통 평가 전체", commonItems)}
       ${quick ? "" : reportScoreBlock("포지션 평가 전체", positionItems)}
       ${quick ? "" : reportScoreBlock("선택 평가 전체", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
       ${positionIdentityTemplate(card)}
@@ -2488,7 +2488,7 @@ function monthlyReportTemplate(card) {
       <small>${position} · 월 단위 누적 평균 · 가중치 없음</small>
     </div>
     <div class="report-radar">${radarItems.map(([label, value]) => `<span>${label}<strong>${value ?? "-"}</strong></span>`).join("")}</div>
-    ${reportScoreBlock(quick ? "퀵 평가 평균" : "월간 공통평가 평균", commonItems)}
+    ${quick ? "" : reportScoreBlock("월간 공통평가 평균", commonItems)}
     ${quick ? "" : reportScoreBlock("월간 포지션평가 평균", positionItems)}
     ${quick ? "" : reportScoreBlock("월간 선택평가 평균", traitItems.length ? traitItems : [{ label: "선택 평가 없음", score: null }])}
     ${monthlyPositionDistributionTemplate(card)}
