@@ -1446,6 +1446,34 @@ function latestHomeMonthlyCard() {
   return latestMonthlyCardForUser(currentUserId);
 }
 
+function quickCurrentFormForUser(userId = currentUserId) {
+  const matchCard = latestQuickMatchCardForUser(userId);
+  const monthlyCard = latestQuickMonthlyCardForUser(userId);
+  const source = matchCard || monthlyCard;
+  if (!source) return null;
+  const matchCards = quickMatchCardsForUser(userId);
+  const positionSummary = matchCard?.selectedPositionSummary || currentFormPositionSummary(matchCards);
+  const positionEntries = positionSummaryEntries(positionSummary);
+  const mainPosition = matchCard?.mainEvaluatedPosition || monthlyCard?.mainPosition || positionEntries[0]?.position || appUser(userId)?.mainPosition || "free";
+  const roleType = positionEntries.length > 1 ? "MULTI ROLE MATCH" : "SINGLE ROLE MATCH";
+  return {
+    matchCard,
+    monthlyCard,
+    quickOVR: matchCard?.overallRating ?? monthlyCard?.monthlyOVR ?? null,
+    mainPosition,
+    playStyle: matchCard?.playStyle || monthlyCard?.mainPlayStyle || "퀵 평가 기준",
+    playStyleCode: matchCard?.playStyleCode || (monthlyCard ? monthlyPositionIdentityText(monthlyCard) : "") || "",
+    radarItems: matchCard
+      ? quickRadarStats(matchCard.analysisScores || [], matchCard.mainEvaluatedPosition)
+      : quickMonthlyRadarStats(monthlyCard),
+    strengths: (matchCard?.strengthsTop3 || monthlyCard?.strengthsSummary || []).slice(0, 3),
+    weaknesses: (matchCard?.weaknessesTop3 || monthlyCard?.weaknessesSummary || []).slice(0, 3),
+    positionEntries,
+    roleType,
+    matchCount: matchCards.length || monthlyCard?.matchCount || 1,
+  };
+}
+
 function playerCurrentRadarStats(stats) {
   const labels = {
     activity: "활동성",
@@ -1655,7 +1683,7 @@ function aggregateCurrentFormItems(cards, key) {
 function currentFormAnalysisCard() {
   const stats = currentHomeStats();
   const cards = currentFormWindowCards();
-  if (!stats || stats.sourceType === "monthlyFallback" || !cards.length) return null;
+  if (!stats || ["monthlyFallback", "quickFallback"].includes(stats.sourceType) || !cards.length) return null;
   const latest = cards[0];
   const selectedPositionSummary = currentFormPositionSummary(cards);
   const mainEvaluatedPosition = currentFormRepresentativePosition(cards, stats.currentMainPosition);
@@ -3124,23 +3152,27 @@ function applyAvatarPreset() {
 function renderHome() {
   if (!canRenderProtectedViews()) return;
   const stats = currentHomeStats();
+  const quickForm = stats?.sourceType === "quickFallback" ? quickCurrentFormForUser(currentUserId) : null;
   const analysisCard = currentFormAnalysisCard();
   const monthlyCard = latestHomeMonthlyCard();
   const matchScore = calculateMatchScore(average(Object.values(commonRatings)), average([6.7]));
   const user = appUser(currentUserId);
-  const positionKey = stats?.currentMainPosition || user?.mainPosition || representativePosition();
+  const positionKey = quickForm?.mainPosition || stats?.currentMainPosition || user?.mainPosition || representativePosition();
   const position = positionLabels[positionKey];
   const profileKey = { am: "cam", dm: "cdm" }[positionKey] || positionKey;
   const profile = playType(profileKey, tendencies);
   document.querySelector("#homeGreeting").textContent = `안녕하세요, ${displayUserName(currentUserId)}님!`;
   document.querySelector("#profile-title").textContent = displayUserName(currentUserId);
-  document.querySelector("#homeCardKicker").textContent = stats?.sourceType === "monthlyFallback" ? "CURRENT FORM · 월카드 대체" : "CURRENT FORM";
-  document.querySelector("#homeFormBasis").textContent = currentFormBasisLabel(stats);
+  document.querySelector("#homeCardKicker").textContent = quickForm ? "QUICK CURRENT FORM" : stats?.sourceType === "monthlyFallback" ? "CURRENT FORM · 월카드 대체" : "CURRENT FORM";
+  document.querySelector("#homeFormBasis").textContent = quickForm ? `최근 퀵매치 ${quickForm.matchCount}경기 기준` : currentFormBasisLabel(stats);
   renderActiveMatchProgress();
   document.querySelector("#avatarPicker").classList.toggle("empty-profile", !stats && !user?.profilePreset);
   const change = document.querySelector(".ovr-line .rise");
-  document.querySelector("#homeOvr").textContent = stats ? stats.currentOVR : "-";
-  if (stats) {
+  document.querySelector("#homeOvr").textContent = quickForm ? quickForm.quickOVR ?? "-" : stats ? stats.currentOVR : "-";
+  if (quickForm) {
+    change.hidden = true;
+    change.textContent = "";
+  } else if (stats) {
     change.hidden = !Number.isFinite(stats.ovrChange);
     if (Number.isFinite(stats.ovrChange)) {
       change.textContent = stats.ovrChange > 0 ? `▲ +${stats.ovrChange}` : stats.ovrChange < 0 ? `▼ ${stats.ovrChange}` : "- 0";
@@ -3151,7 +3183,14 @@ function renderHome() {
   document.querySelector("#homePositionBadge").textContent = position[1];
   document.querySelector("#homePosition").textContent = `${position[0]} · ${position[1]}`;
   const identity = document.querySelector("#playIdentity");
-  if (stats && stats.currentPlayStyle !== "분석 준비중") {
+  if (quickForm) {
+    identity.classList.remove("pending");
+    document.querySelector("#homePlayType").textContent = quickForm.playStyle;
+    document.querySelector("#homePlayTypeSub").textContent = quickForm.playStyleCode || "퀵매치 기준";
+    document.querySelector("#homeSupportTags").innerHTML = [`QUICK OVR ${quickForm.quickOVR ?? "-"}`, "공식 OVR 미반영"]
+      .map((tag) => `<span>${tag}</span>`)
+      .join("");
+  } else if (stats && stats.currentPlayStyle !== "분석 준비중") {
     identity.classList.remove("pending");
     document.querySelector("#homePlayType").textContent = stats.currentPlayStyle;
     document.querySelector("#homePlayTypeSub").textContent = currentPlayStyleCode(stats);
@@ -3171,8 +3210,22 @@ function renderHome() {
     document.querySelector("#homeSupportTags").innerHTML = "";
   }
   applyAvatarPreset();
-  renderRadar(document.querySelector("#homeRadar"), stats ? playerCurrentRadarStats(stats) : emptyRadarStats(), 320);
-  if (analysisCard) {
+  renderRadar(document.querySelector("#homeRadar"), quickForm ? quickForm.radarItems : stats ? playerCurrentRadarStats(stats) : emptyRadarStats(), 320);
+  if (quickForm) {
+    const strengths = quickForm.strengths.map(analysisItemLabel).filter(Boolean);
+    const weaknesses = quickForm.weaknesses.map(analysisItemLabel).filter(Boolean);
+    const positions = quickForm.positionEntries.map((entry) => `${entry.label} ${entry.count}회`);
+    document.querySelector(".growth-read").innerHTML = `
+      <small>QUICK CURRENT FORM</small>
+      <strong>${strengths.length ? `최근 퀵 경기 강점 TOP3 · ${strengths.join(" · ")}` : "최근 퀵 경기 강점 분석 준비중"}</strong>
+      <p>
+        보완점: ${weaknesses.length ? weaknesses.join(" · ") : "추가 퀵 데이터 수집 중"}<br>
+        POSITION IDENTITY: ${positions.length ? positions.join(" · ") : position[0]}<br>
+        MULTI ROLE MATCH: ${quickForm.roleType}
+      </p>
+      <button class="ghost-button" data-home-quick-card type="button">최근 퀵매치 카드 보기</button>
+    `;
+  } else if (analysisCard) {
     const strengthLabels = analysisCard.strengthsTop3.slice(0, 3).map(analysisItemLabel).join(" · ");
     const weaknessLabels = analysisCard.weaknessesTop3.slice(0, 3).map(analysisItemLabel).join(" · ");
     document.querySelector(".growth-read small").textContent = "CURRENT FORM ANALYSIS";
@@ -4720,6 +4773,15 @@ function bindInteractions() {
       const card = userMonthlyCards(friendProfileMonthlyButton.dataset.cardUser)
         .find((item) => item.monthKey === friendProfileMonthlyButton.dataset.friendProfileMonthly);
       if (card) openSheet("monthlyCardView", card);
+      return;
+    }
+    const homeQuickCardButton = event.target.closest("[data-home-quick-card]");
+    if (homeQuickCardButton) {
+      const matchCard = latestQuickMatchCardForUser(currentUserId);
+      const monthlyCard = latestQuickMonthlyCardForUser(currentUserId);
+      if (matchCard) openSheet("cardView", matchCard);
+      else if (monthlyCard) openSheet("monthlyCardView", monthlyCard);
+      else showToast("아직 퀵 카드가 없습니다.");
       return;
     }
     const monthlyCardButton = event.target.closest("[data-monthly-card]");
