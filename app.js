@@ -1236,6 +1236,57 @@ function matchDisplayMeta(match) {
   return `${dateText} · ${match.location}`;
 }
 
+function activeMatchParticipantGroups(match = activeMatchRecord()) {
+  const participants = Array.isArray(match?.participants) ? match.participants : [];
+  return {
+    completed: participants.filter((participant) => participant.evaluationCompleted),
+    pending: participants.filter((participant) => !participant.evaluationCompleted),
+  };
+}
+
+function activeMatchParticipantName(participant) {
+  return displayUserName(participant?.userId || "") || "참가자";
+}
+
+function activeMatchFacesHtml(match = activeMatchRecord()) {
+  const participants = Array.isArray(match?.participants) ? match.participants : [];
+  const visibleParticipants = participants.slice(0, 5);
+  const extraCount = Math.max(0, participants.length - visibleParticipants.length);
+  const faces = visibleParticipants.map((participant) => {
+    const name = activeMatchParticipantName(participant);
+    const initial = escapeHtml(name.trim().slice(0, 1) || "?");
+    const title = escapeHtml(name);
+    return participant.evaluationCompleted
+      ? `<span title="${title}" aria-label="${title} 평가 완료">${initial}</span>`
+      : `<i title="${title}" aria-label="${title} 미평가">${initial}</i>`;
+  }).join("");
+  return `${faces}${extraCount ? `<b aria-label="추가 참가자 ${extraCount}명">+${extraCount}</b>` : ""}`;
+}
+
+function activeMatchEvaluationDetailTemplate(match = activeMatchRecord()) {
+  const { completed, pending } = activeMatchParticipantGroups(match);
+  const renderNames = (participants) => participants.length
+    ? participants.map((participant) => `<li>${escapeHtml(activeMatchParticipantName(participant))}</li>`).join("")
+    : "<li class=\"empty\">없음</li>";
+  return `
+    <div class="result-title reflection-detail-title">
+      <h3>평가 진행 상세</h3>
+      <button data-close-sheet type="button" aria-label="닫기">×</button>
+    </div>
+    <div class="evaluation-progress-detail">
+      <section>
+        <h4>평가 완료 (${completed.length})</h4>
+        <ul>${renderNames(completed)}</ul>
+      </section>
+      <section>
+        <h4>미평가 (${pending.length})</h4>
+        <ul>${renderNames(pending)}</ul>
+      </section>
+    </div>
+    <button class="primary full" data-close-sheet type="button">확인</button>
+  `;
+}
+
 function renderActiveMatchProgress() {
   const match = activeMatchRecord();
   const quick = isQuickMatch(match);
@@ -1275,11 +1326,9 @@ function renderActiveMatchProgress() {
       ].filter(Boolean).join(" / ")
       : `${waiting.label} · 평가가 끝나면 선수카드가 열립니다`;
   }
-  document.querySelector("#activeMatchFaces").setAttribute("aria-label", `참가자 ${progress.totalCount}명 중 ${progress.completedCount}명 완료`);
-  document.querySelector("#activeMatchFaces").innerHTML = match.participants.map((participant) => {
-    const initial = displayUserName(participant.userId).slice(0, 1);
-    return participant.evaluationCompleted ? `<span>${initial}</span>` : "<i></i>";
-  }).join("");
+  const activeMatchFaces = document.querySelector("#activeMatchFaces");
+  activeMatchFaces.setAttribute("aria-label", `평가자 상세 보기: 참가자 ${progress.totalCount}명 중 ${progress.completedCount}명 완료`);
+  activeMatchFaces.innerHTML = activeMatchFacesHtml(match);
   document.querySelector("#activeMatchProgress").setAttribute("style", `--progress: ${progressPercent}`);
   document.querySelector("#activeMatchProgressValue").textContent = `${progress.completedCount}/${progress.totalCount}`;
   document.querySelector("#activeMatchProgressLabel").textContent = match.status === "published" ? "공개" : "평가";
@@ -2976,6 +3025,7 @@ function openSheet(kind, payload = null) {
     matchResultCardView: cardViewCard ? matchCardViewTemplate(cardViewCard, { allowDetail: false }) : "<h3>MATCH CARD</h3><p>경기 카드 데이터가 아직 없습니다.</p><button class=\"primary full\" data-close-sheet type=\"button\">확인</button>",
     monthlyCardView: monthlyViewCard ? monthlyCardViewTemplate(monthlyViewCard) : "<h3>MONTHLY CARD</h3><p>월 카드 데이터가 아직 없습니다.</p><button class=\"primary full\" data-close-sheet type=\"button\">확인</button>",
     monthlyReport: monthlyReportCard ? monthlyReportTemplate(monthlyReportCard) : "<h3>MONTHLY REPORT</h3><p>월 카드 데이터가 아직 없습니다.</p><button class=\"primary full\" data-close-sheet type=\"button\">확인</button>",
+    evaluationProgressDetail: activeMatchEvaluationDetailTemplate(payload || activeMatchRecord()),
     matchResult: matchResultTemplate(),
     matchResultDetail: matchResultDetailTemplate(),
     avatar: `
@@ -4798,6 +4848,12 @@ function setView(view) {
 
 function bindInteractions() {
   document.addEventListener("click", (event) => {
+    const activeMatchFacesButton = event.target.closest("[data-active-match-faces]");
+    if (activeMatchFacesButton) {
+      const match = activeMatchRecord();
+      if (match) openSheet("evaluationProgressDetail", match);
+      return;
+    }
     const friendProfileMatchButton = event.target.closest("[data-friend-profile-match]");
     if (friendProfileMatchButton) {
       const card = (window.PlaylogOfficialData?.playerMatchCards || [])

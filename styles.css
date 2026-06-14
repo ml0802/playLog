@@ -186,10 +186,13 @@ svg text { font-family: inherit; }
 .match-icon { width: 46px; height: 46px; border-radius: 16px; display: grid; place-items: center; background: #eee7ff; }
 .match-progress h3 { margin: 6px 0 5px; }
 .match-progress p { margin: 0 0 10px; color: var(--muted); line-height: 1.35; }
-.faces { display: flex; gap: 2px; }
-.faces span, .faces i { width: 25px; height: 25px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-style: normal; }
+.faces { max-width: 100%; display: flex; align-items: center; gap: 4px; padding: 0; background: transparent; text-align: left; }
+.faces span, .faces i, .faces b { flex: 0 0 auto; height: 25px; border-radius: 999px; display: grid; place-items: center; font-size: 10px; font-style: normal; font-weight: 900; }
+.faces span, .faces i { width: 25px; }
 .faces span { background: #242338; color: #fff; }
-.faces i { background: #d7d8e2; }
+.faces i { background: #d7d8e2; color: #6f7180; }
+.faces b { min-width: 28px; padding: 0 7px; background: #f0edfb; color: var(--purple); }
+.faces:focus-visible { outline: 2px solid var(--purple); outline-offset: 3px; }
 
 .progress-ring {
   width: 78px; height: 78px; border-radius: 50%; display: grid; place-items: center; align-content: center;
@@ -459,6 +462,12 @@ svg text { font-family: inherit; }
 .reflection-detail-block { margin-top: 8px; }
 .reflection-detail-block p { margin: 0; line-height: 1.45; }
 .delete-confirm-copy { margin: 6px 0 18px; color: var(--muted); line-height: 1.5; font-weight: 800; }
+.evaluation-progress-detail { max-height: min(56vh, 430px); overflow-y: auto; display: grid; gap: 10px; margin: 12px 0 16px; padding-right: 2px; }
+.evaluation-progress-detail section { padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: #faf9ff; }
+.evaluation-progress-detail h4 { margin: 0 0 10px; color: var(--ink); font-size: 14px; }
+.evaluation-progress-detail ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.evaluation-progress-detail li { padding: 9px 10px; border-radius: 10px; background: #fff; color: #33364a; font-size: 13px; font-weight: 850; }
+.evaluation-progress-detail li.empty { color: var(--muted); }
 .primary.danger { background: linear-gradient(135deg, #e34866, #c92e4d); box-shadow: 0 12px 24px rgba(201,46,77,.2); }
 .detail-chip-list { display: flex; gap: 6px; flex-wrap: wrap; }
 .detail-chip-list span { padding: 6px 8px; border-radius: 999px; background: #eee7ff; color: var(--purple); font-size: 11px; font-weight: 900; }
