@@ -165,11 +165,6 @@ svg text { font-family: inherit; }
 .growth-read strong { display: inline; color: #fff; font-size: 13px; margin-right: 5px; }
 .growth-read p { display: inline; margin: 0; color: rgba(255,255,255,.71); font-size: 10px; line-height: 1.3; }
 .growth-read span { color: #c9b7ff; font-size: 11px; font-weight: 800; }
-.quick-form-summary { display: grid; gap: 7px; margin-top: 7px; }
-.quick-form-summary section { padding: 8px; border-radius: 10px; background: rgba(255,255,255,.055); border: 1px solid rgba(177,143,255,.14); }
-.quick-form-summary b { display: block; margin-bottom: 3px; color: rgba(255,255,255,.92); font-size: 11px; font-weight: 950; }
-.quick-form-summary p { display: block; margin: 0; color: rgba(255,255,255,.72); font-size: 11px; line-height: 1.35; }
-.quick-form-button { width: 100%; min-height: 38px; margin-top: 8px; border-radius: 10px; background: rgba(111,72,224,.72); color: #fff; font-size: 12px; font-weight: 950; }
 .summary-grid small, .self-result span { display: block; color: var(--muted); font-weight: 700; }
 .green { color: var(--green); }
 .gold { color: var(--gold); }

@@ -1449,28 +1449,31 @@ function latestHomeMonthlyCard() {
 function quickCurrentFormForUser(userId = currentUserId) {
   const matchCard = latestQuickMatchCardForUser(userId);
   const monthlyCard = latestQuickMonthlyCardForUser(userId);
-  const source = matchCard || monthlyCard;
+  const source = monthlyCard || matchCard;
   if (!source) return null;
   const matchCards = quickMatchCardsForUser(userId);
-  const positionSummary = matchCard?.selectedPositionSummary || currentFormPositionSummary(matchCards);
+  const sourceIsMonthly = Boolean(monthlyCard);
+  const positionSummary = sourceIsMonthly ? currentFormPositionSummary(matchCards) : matchCard?.selectedPositionSummary || {};
   const positionEntries = positionSummaryEntries(positionSummary);
-  const mainPosition = matchCard?.mainEvaluatedPosition || monthlyCard?.mainPosition || positionEntries[0]?.position || appUser(userId)?.mainPosition || "free";
+  const mainPosition = sourceIsMonthly ? monthlyCard.mainPosition : matchCard?.mainEvaluatedPosition || positionEntries[0]?.position || appUser(userId)?.mainPosition || "free";
   const roleType = positionEntries.length > 1 ? "MULTI ROLE MATCH" : "SINGLE ROLE MATCH";
   return {
     matchCard,
     monthlyCard,
-    quickOVR: matchCard?.overallRating ?? monthlyCard?.monthlyOVR ?? null,
+    sourceType: sourceIsMonthly ? "quickMonthly" : "quickMatch",
+    quickOVR: sourceIsMonthly ? monthlyCard.monthlyOVR : matchCard?.overallRating ?? null,
     mainPosition,
-    playStyle: matchCard?.playStyle || monthlyCard?.mainPlayStyle || "퀵 평가 기준",
-    playStyleCode: matchCard?.playStyleCode || (monthlyCard ? monthlyPositionIdentityText(monthlyCard) : "") || "",
-    radarItems: matchCard
-      ? quickRadarStats(matchCard.analysisScores || [], matchCard.mainEvaluatedPosition)
-      : quickMonthlyRadarStats(monthlyCard),
-    strengths: (matchCard?.strengthsTop3 || monthlyCard?.strengthsSummary || []).slice(0, 3),
-    weaknesses: (matchCard?.weaknessesTop3 || monthlyCard?.weaknessesSummary || []).slice(0, 3),
+    playStyle: sourceIsMonthly ? monthlyCard.mainPlayStyle : matchCard?.playStyle || "퀵 평가 기준",
+    playStyleCode: sourceIsMonthly ? monthlyPositionIdentityText(monthlyCard) : matchCard?.playStyleCode || "",
+    radarItems: sourceIsMonthly
+      ? quickMonthlyRadarStats(monthlyCard)
+      : quickRadarStats(matchCard?.analysisScores || [], matchCard?.mainEvaluatedPosition),
+    strengths: (sourceIsMonthly ? monthlyCard.strengthsSummary : matchCard?.strengthsTop3 || []).slice(0, 3),
+    weaknesses: (sourceIsMonthly ? monthlyCard.weaknessesSummary : matchCard?.weaknessesTop3 || []).slice(0, 3),
     positionEntries,
     roleType,
-    matchCount: matchCards.length || monthlyCard?.matchCount || 1,
+    matchCount: sourceIsMonthly ? monthlyCard.matchCount || matchCards.length || 1 : 1,
+    basisLabel: sourceIsMonthly ? `퀵 월카드 ${monthlyCard.matchCount || matchCards.length || 1}경기 기준` : "최근 퀵매치 1경기 기준",
   };
 }
 
@@ -3186,7 +3189,7 @@ function renderHome() {
   document.querySelector("#homeGreeting").textContent = `안녕하세요, ${displayUserName(currentUserId)}님!`;
   document.querySelector("#profile-title").textContent = displayUserName(currentUserId);
   document.querySelector("#homeCardKicker").textContent = quickForm ? "QUICK CURRENT FORM" : stats?.sourceType === "monthlyFallback" ? "CURRENT FORM · 월카드 대체" : "CURRENT FORM";
-  document.querySelector("#homeFormBasis").textContent = quickForm ? `최근 퀵매치 ${quickForm.matchCount}경기 기준` : currentFormBasisLabel(stats);
+  document.querySelector("#homeFormBasis").textContent = quickForm ? quickForm.basisLabel : currentFormBasisLabel(stats);
   renderActiveMatchProgress();
   document.querySelector("#avatarPicker").classList.toggle("empty-profile", !stats && !user?.profilePreset);
   const change = document.querySelector(".ovr-line .rise");
@@ -3236,28 +3239,10 @@ function renderHome() {
   if (quickForm) {
     const strengths = quickForm.strengths.map(analysisItemLabel).filter(Boolean);
     const weaknesses = quickForm.weaknesses.map(analysisItemLabel).filter(Boolean);
-    const positions = quickForm.positionEntries.map((entry) => `${entry.label} ${entry.count}회`);
     document.querySelector(".growth-read").innerHTML = `
-      <small>QUICK CURRENT FORM</small>
-      <div class="quick-form-summary">
-        <section>
-          <b>최근 퀵 경기 강점 TOP3</b>
-          <p>${strengths.length ? strengths.join(" · ") : "분석 준비중"}</p>
-        </section>
-        <section>
-          <b>최근 퀵 경기 보완점 TOP3</b>
-          <p>${weaknesses.length ? weaknesses.join(" · ") : "추가 퀵 데이터 수집 중"}</p>
-        </section>
-        <section>
-          <b>POSITION IDENTITY</b>
-          <p>${positions.length ? positions.join(" · ") : position[0]}</p>
-        </section>
-        <section>
-          <b>MULTI ROLE MATCH</b>
-          <p>${quickForm.roleType}</p>
-        </section>
-      </div>
-      <button class="quick-form-button" data-home-quick-card type="button">최근 퀵매치 카드 보기</button>
+      <small>QUICK CURRENT FORM ANALYSIS</small>
+      <strong>${strengths.length ? strengths.join(" · ") : "퀵 폼 분석 준비중"}</strong>
+      <p>${quickForm.basisLabel}으로 현재 폼을 요약했습니다. 보완 포인트: ${weaknesses.length ? weaknesses.join(" · ") : "추가 데이터 수집 중"}.</p>
     `;
   } else if (analysisCard) {
     const strengthLabels = analysisCard.strengthsTop3.slice(0, 3).map(analysisItemLabel).join(" · ");
