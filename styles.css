@@ -462,6 +462,7 @@ svg text { font-family: inherit; }
 .reflection-detail-block { margin-top: 8px; }
 .reflection-detail-block p { margin: 0; line-height: 1.45; }
 .delete-confirm-copy { margin: 6px 0 18px; color: var(--muted); line-height: 1.5; font-weight: 800; }
+.evaluation-progress-help { margin: 5px 0 12px; color: var(--muted); font-size: 12px; font-weight: 800; line-height: 1.4; }
 .evaluation-progress-detail { max-height: min(56vh, 430px); overflow-y: auto; display: grid; gap: 10px; margin: 12px 0 16px; padding-right: 2px; }
 .evaluation-progress-detail section { padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: #faf9ff; }
 .evaluation-progress-detail h4 { margin: 0 0 10px; color: var(--ink); font-size: 14px; }

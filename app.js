@@ -1238,8 +1238,26 @@ function matchDisplayMeta(match) {
 
 function activeMatchParticipantGroups(match = activeMatchRecord()) {
   const participants = Array.isArray(match?.participants) ? match.participants : [];
+  const evaluations = (isQuickMatch(match)
+    ? window.PlaylogOfficialData?.quickEvaluations
+    : window.PlaylogOfficialData?.evaluations) || [];
+  const submittedAtForParticipant = (participant) => {
+    const timestamps = evaluations
+      .filter((evaluation) =>
+        evaluation.matchId === match?.id
+        && evaluation.evaluatorUserId === participant.userId
+        && evaluation.isActive !== false,
+      )
+      .map((evaluation) => new Date(evaluation.updatedAt || evaluation.createdAt || 0).getTime())
+      .filter((time) => Number.isFinite(time) && time > 0);
+    return timestamps.length ? Math.max(...timestamps) : Number.MAX_SAFE_INTEGER;
+  };
   return {
-    completed: participants.filter((participant) => participant.evaluationCompleted),
+    completed: participants
+      .filter((participant) => participant.evaluationCompleted)
+      .map((participant, index) => ({ participant, submittedAt: submittedAtForParticipant(participant), index }))
+      .sort((a, b) => (a.submittedAt - b.submittedAt) || (a.index - b.index))
+      .map((item) => item.participant),
     pending: participants.filter((participant) => !participant.evaluationCompleted),
   };
 }
@@ -1250,7 +1268,7 @@ function activeMatchParticipantName(participant) {
 
 function activeMatchFacesHtml(match = activeMatchRecord()) {
   const participants = Array.isArray(match?.participants) ? match.participants : [];
-  const visibleParticipants = participants.slice(0, 5);
+  const visibleParticipants = participants.slice(0, 4);
   const extraCount = Math.max(0, participants.length - visibleParticipants.length);
   const faces = visibleParticipants.map((participant) => {
     const name = activeMatchParticipantName(participant);
@@ -1273,6 +1291,7 @@ function activeMatchEvaluationDetailTemplate(match = activeMatchRecord()) {
       <h3>평가 진행 상세</h3>
       <button data-close-sheet type="button" aria-label="닫기">×</button>
     </div>
+    <p class="evaluation-progress-help">평가 완료는 제출 순서, 미평가는 참가자 순서로 표시됩니다.</p>
     <div class="evaluation-progress-detail">
       <section>
         <h4>평가 완료 (${completed.length})</h4>
