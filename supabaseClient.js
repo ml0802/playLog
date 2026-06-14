@@ -1354,6 +1354,12 @@ async function refreshPlayerCards(userId) {
   const monthlyCards = (monthlyCardRows || []).map(fromPlayerMonthlyCardRow);
   const quickMonthlyCards = (quickMonthlyCardRows || []).map((row) => ({ ...fromPlayerMonthlyCardRow(row), cardType: "quick" }));
   replaceCardsForUsers(cardUserIds, { matchCards, currentStats, monthlyCards, quickMatchCards, quickMonthlyCards });
+  console.log("[Playlog] refreshPlayerCards quick monthly load", {
+    userId,
+    cardUserIds,
+    quickMatchCardsLength: quickMatchCards.length,
+    quickMonthlyCardsLength: quickMonthlyCards.length,
+  });
   return { matchCards, currentStats, monthlyCards, quickMatchCards, quickMonthlyCards };
 }
 

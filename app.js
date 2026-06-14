@@ -1333,23 +1333,26 @@ function currentStatsForUser(userId = currentUserId) {
   if (!monthlyCard) {
     const quickCard = latestQuickMatchCardForUser(userId);
     const quickMonthlyCard = latestQuickMonthlyCardForUser(userId);
-    const fallback = quickCard || quickMonthlyCard;
+    const fallback = quickMonthlyCard || quickCard;
     if (!fallback) return null;
+    const quickMonthlyFallback = Boolean(quickMonthlyCard);
     return {
       userId,
-      currentOVR: quickCard?.overallRating ?? quickMonthlyCard?.monthlyOVR ?? null,
-      previousOVR: quickCard?.previousOverallRating ?? quickMonthlyCard?.previousMonthlyOVR ?? null,
-      ovrChange: quickCard?.overallChange ?? quickMonthlyCard?.monthlyOVRChange ?? null,
+      currentOVR: quickMonthlyFallback ? quickMonthlyCard.monthlyOVR : quickCard?.overallRating ?? null,
+      previousOVR: quickMonthlyFallback ? quickMonthlyCard.previousMonthlyOVR : quickCard?.previousOverallRating ?? null,
+      ovrChange: quickMonthlyFallback ? quickMonthlyCard.monthlyOVRChange : quickCard?.overallChange ?? null,
       radarData: fallback.radarData || {},
       radarChange: null,
-      currentPlayStyle: quickCard?.playStyle || quickMonthlyCard?.mainPlayStyle || "퀵 평가 기준",
+      currentPlayStyle: quickMonthlyFallback ? quickMonthlyCard.mainPlayStyle : quickCard?.playStyle || "퀵 평가 기준",
       previousPlayStyle: null,
-      currentMainPosition: quickCard?.mainEvaluatedPosition || quickMonthlyCard?.mainPosition || null,
+      currentMainPosition: quickMonthlyFallback ? quickMonthlyCard.mainPosition : quickCard?.mainEvaluatedPosition || null,
       positionAdaptation: fallback.positionAdaptation || {},
       reliabilityLevel: null,
-      recentMatchCount: quickCard ? 1 : quickMonthlyCard?.matchCount || 0,
+      recentMatchCount: quickMonthlyFallback ? quickMonthlyCard.matchCount || 0 : 1,
       sourceType: "quickFallback",
-      monthKey: quickMonthlyCard?.monthKey || null,
+      sourceCardType: quickMonthlyFallback ? "quickMonthly" : "quickMatch",
+      sourceCardId: fallback.id || fallback.matchId || fallback.monthKey || null,
+      monthKey: quickMonthlyFallback ? quickMonthlyCard.monthKey : null,
     };
   }
   return {
@@ -1453,6 +1456,7 @@ function quickCurrentFormForUser(userId = currentUserId) {
   if (!source) return null;
   const matchCards = quickMatchCardsForUser(userId);
   const sourceIsMonthly = Boolean(monthlyCard);
+  const [quickYear, quickMonth] = sourceIsMonthly && monthlyCard.monthKey ? monthlyCard.monthKey.split("-") : [];
   const positionSummary = sourceIsMonthly ? currentFormPositionSummary(matchCards) : matchCard?.selectedPositionSummary || {};
   const positionEntries = positionSummaryEntries(positionSummary);
   const mainPosition = sourceIsMonthly ? monthlyCard.mainPosition : matchCard?.mainEvaluatedPosition || positionEntries[0]?.position || appUser(userId)?.mainPosition || "free";
@@ -1461,6 +1465,9 @@ function quickCurrentFormForUser(userId = currentUserId) {
     matchCard,
     monthlyCard,
     sourceType: sourceIsMonthly ? "quickMonthly" : "quickMatch",
+    sourceLabel: sourceIsMonthly && quickYear && quickMonth ? `${quickYear}년 ${Number(quickMonth)}월 퀵 월카드 기준` : "최근 퀵 월카드 기준",
+    cardType: sourceIsMonthly ? "quick-monthly" : "quick-match",
+    cardId: source.id || source.matchId || source.monthKey || null,
     quickOVR: sourceIsMonthly ? monthlyCard.monthlyOVR : matchCard?.overallRating ?? null,
     mainPosition,
     playStyle: sourceIsMonthly ? monthlyCard.mainPlayStyle : matchCard?.playStyle || "퀵 평가 기준",
@@ -1473,7 +1480,7 @@ function quickCurrentFormForUser(userId = currentUserId) {
     positionEntries,
     roleType,
     matchCount: sourceIsMonthly ? monthlyCard.matchCount || matchCards.length || 1 : 1,
-    basisLabel: sourceIsMonthly ? `퀵 월카드 ${monthlyCard.matchCount || matchCards.length || 1}경기 기준` : "최근 퀵매치 1경기 기준",
+    basisLabel: sourceIsMonthly && quickYear && quickMonth ? `${quickYear}년 ${Number(quickMonth)}월 퀵 월카드 기준` : sourceIsMonthly ? "최근 퀵 월카드 기준" : "최근 퀵매치 1경기 기준",
   };
 }
 
@@ -1484,12 +1491,12 @@ function hasQuickOnlyCurrentForm(userId = currentUserId) {
 function openLatestQuickCurrentFormCard(userId = currentUserId) {
   const matchCard = latestQuickMatchCardForUser(userId);
   const monthlyCard = latestQuickMonthlyCardForUser(userId);
-  if (matchCard) {
-    openSheet("cardView", matchCard);
-    return true;
-  }
   if (monthlyCard) {
     openSheet("monthlyCardView", monthlyCard);
+    return true;
+  }
+  if (matchCard) {
+    openSheet("cardView", matchCard);
     return true;
   }
   return false;
@@ -3178,6 +3185,17 @@ function renderHome() {
   if (!canRenderProtectedViews()) return;
   const stats = currentHomeStats();
   const quickForm = stats?.sourceType === "quickFallback" ? quickCurrentFormForUser(currentUserId) : null;
+  if (quickForm) {
+    const quickMonthlyCards = quickMonthlyCardsForUser(currentUserId);
+    const quickMatchCards = quickMatchCardsForUser(currentUserId);
+    console.log("[Playlog] quick current form source", {
+      quickMonthlyCardsLength: quickMonthlyCards.length,
+      quickMatchCardsLength: quickMatchCards.length,
+      selectedQuickCurrentFormSource: quickForm.sourceLabel || quickForm.sourceType,
+      selectedQuickCurrentFormCardId: quickForm.cardId,
+      selectedQuickCurrentFormCardType: quickForm.cardType,
+    });
+  }
   const analysisCard = currentFormAnalysisCard();
   const monthlyCard = latestHomeMonthlyCard();
   const matchScore = calculateMatchScore(average(Object.values(commonRatings)), average([6.7]));
