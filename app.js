@@ -1474,6 +1474,24 @@ function quickCurrentFormForUser(userId = currentUserId) {
   };
 }
 
+function hasQuickOnlyCurrentForm(userId = currentUserId) {
+  return !recentOfficialCardsForUser(userId, 60).length && Boolean(quickCurrentFormForUser(userId));
+}
+
+function openLatestQuickCurrentFormCard(userId = currentUserId) {
+  const matchCard = latestQuickMatchCardForUser(userId);
+  const monthlyCard = latestQuickMonthlyCardForUser(userId);
+  if (matchCard) {
+    openSheet("cardView", matchCard);
+    return true;
+  }
+  if (monthlyCard) {
+    openSheet("monthlyCardView", monthlyCard);
+    return true;
+  }
+  return false;
+}
+
 function playerCurrentRadarStats(stats) {
   const labels = {
     activity: "활동성",
@@ -2372,7 +2390,7 @@ function officialAnalysisTemplate(card) {
   const quick = card.cardType === "quick";
   const hasPrevious = Number.isFinite(card.previousOverallRating);
   const hasChange = Number.isFinite(card.overallChange);
-  const ovrValue = hasPrevious ? `${card.previousOverallRating} → ${card.overallRating}` : `OVR ${card.overallRating}`;
+  const ovrValue = quick ? `OVR ${card.overallRating}` : hasPrevious ? `${card.previousOverallRating} → ${card.overallRating}` : `OVR ${card.overallRating}`;
   const trend = hasChange
     ? `${card.overallChange > 0 ? "▲ +" : card.overallChange < 0 ? "▼ " : ""}${card.overallChange}`
     : "-";
@@ -2421,7 +2439,7 @@ function officialAnalysisTemplate(card) {
       <p class="result-description">${quick ? "퀵 경기 분석 · 공식 OVR과 CURRENT FORM 미반영" : "이번 경기 변화 분석 · 최근 60일 내 최근 경기 평균 대비"}</p>
       <div class="result-overall">
         <div><small>${quick ? "QUICK OVR" : "OVR"}</small><strong>${ovrValue}</strong></div>
-        <em>${trend}</em>
+        <em>${quick ? "공식 OVR 미반영" : trend}</em>
       </div>
       <div class="report-summary">
         <span>${positionLabels[card.mainEvaluatedPosition]?.[0] || "-"} · ${positionLabels[card.mainEvaluatedPosition]?.[1] || "-"}</span>
@@ -2829,7 +2847,8 @@ function renderRadar(target, stats, size = 140) {
   const detailed = size > 180;
   const maxRadius = size * (detailed ? 0.27 : 0.35);
   const points = stats.map(([, score], index) => {
-    const safeScore = Number.isFinite(score) ? score : 0;
+    const rawScore = Number(score);
+    const safeScore = Number.isFinite(rawScore) ? (rawScore <= 10 ? rawScore * 10 : rawScore) : 0;
     const angle = Math.PI * 2 * (index / stats.length) - Math.PI / 2;
     const radius = (safeScore / 100) * maxRadius;
     return [center + Math.cos(angle) * radius, center + Math.sin(angle) * radius];
@@ -2873,6 +2892,9 @@ function showToast(message) {
 function openSheet(kind, payload = null) {
   const overlay = document.querySelector("#overlay");
   const sheet = document.querySelector("#sheet");
+  if (kind === "card" && !payload?.overallRating && hasQuickOnlyCurrentForm(currentUserId)) {
+    if (openLatestQuickCurrentFormCard(currentUserId)) return;
+  }
   const me = appUser(currentUserId) || {};
   const officialAnalysisCard = payload?.overallRating ? payload : latestHomeAnalysisCard();
   const currentFormCard = currentFormAnalysisCard();
@@ -3217,13 +3239,25 @@ function renderHome() {
     const positions = quickForm.positionEntries.map((entry) => `${entry.label} ${entry.count}회`);
     document.querySelector(".growth-read").innerHTML = `
       <small>QUICK CURRENT FORM</small>
-      <strong>${strengths.length ? `최근 퀵 경기 강점 TOP3 · ${strengths.join(" · ")}` : "최근 퀵 경기 강점 분석 준비중"}</strong>
-      <p>
-        보완점: ${weaknesses.length ? weaknesses.join(" · ") : "추가 퀵 데이터 수집 중"}<br>
-        POSITION IDENTITY: ${positions.length ? positions.join(" · ") : position[0]}<br>
-        MULTI ROLE MATCH: ${quickForm.roleType}
-      </p>
-      <button class="ghost-button" data-home-quick-card type="button">최근 퀵매치 카드 보기</button>
+      <div class="quick-form-summary">
+        <section>
+          <b>최근 퀵 경기 강점 TOP3</b>
+          <p>${strengths.length ? strengths.join(" · ") : "분석 준비중"}</p>
+        </section>
+        <section>
+          <b>최근 퀵 경기 보완점 TOP3</b>
+          <p>${weaknesses.length ? weaknesses.join(" · ") : "추가 퀵 데이터 수집 중"}</p>
+        </section>
+        <section>
+          <b>POSITION IDENTITY</b>
+          <p>${positions.length ? positions.join(" · ") : position[0]}</p>
+        </section>
+        <section>
+          <b>MULTI ROLE MATCH</b>
+          <p>${quickForm.roleType}</p>
+        </section>
+      </div>
+      <button class="quick-form-button" data-home-quick-card type="button">최근 퀵매치 카드 보기</button>
     `;
   } else if (analysisCard) {
     const strengthLabels = analysisCard.strengthsTop3.slice(0, 3).map(analysisItemLabel).join(" · ");
@@ -4777,11 +4811,7 @@ function bindInteractions() {
     }
     const homeQuickCardButton = event.target.closest("[data-home-quick-card]");
     if (homeQuickCardButton) {
-      const matchCard = latestQuickMatchCardForUser(currentUserId);
-      const monthlyCard = latestQuickMonthlyCardForUser(currentUserId);
-      if (matchCard) openSheet("cardView", matchCard);
-      else if (monthlyCard) openSheet("monthlyCardView", monthlyCard);
-      else showToast("아직 퀵 카드가 없습니다.");
+      if (!openLatestQuickCurrentFormCard(currentUserId)) showToast("아직 퀵 카드가 없습니다.");
       return;
     }
     const monthlyCardButton = event.target.closest("[data-monthly-card]");
@@ -4844,11 +4874,17 @@ function bindInteractions() {
   });
   document.querySelector("#homePlayerCard").addEventListener("click", (event) => {
     if (event.target.closest("#avatarPicker")) return;
+    if (event.target.closest("[data-home-quick-card]")) return;
     if (!recentOfficialCards(60).length && !latestQuickMatchCardForUser(currentUserId) && !latestQuickMonthlyCardForUser(currentUserId)) {
       showToast("아직 분석할 경기 기록이 없습니다.");
       return;
     }
     document.querySelector("#homePlayerCard").classList.add("expanded");
+    if (hasQuickOnlyCurrentForm(currentUserId)) {
+      if (!openLatestQuickCurrentFormCard(currentUserId)) showToast("아직 퀵 카드가 없습니다.");
+      setTimeout(() => document.querySelector("#homePlayerCard").classList.remove("expanded"), 700);
+      return;
+    }
     openSheet("card");
     setTimeout(() => document.querySelector("#homePlayerCard").classList.remove("expanded"), 700);
   });
@@ -4857,6 +4893,10 @@ function bindInteractions() {
       event.preventDefault();
       if (!recentOfficialCards(60).length && !latestQuickMatchCardForUser(currentUserId) && !latestQuickMonthlyCardForUser(currentUserId)) {
         showToast("아직 분석할 경기 기록이 없습니다.");
+        return;
+      }
+      if (hasQuickOnlyCurrentForm(currentUserId)) {
+        if (!openLatestQuickCurrentFormCard(currentUserId)) showToast("아직 퀵 카드가 없습니다.");
         return;
       }
       openSheet("card");
