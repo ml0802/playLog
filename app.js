@@ -2683,22 +2683,11 @@ function matchResultTemplate() {
   const match = activeMatchRecord();
   const pom = window.PlaylogOfficialData?.calculateMatchAward?.(selectedMatchId, "pom");
   const nextStar = window.PlaylogOfficialData?.calculateMatchAward?.(selectedMatchId, "next_star");
-  const votes = window.PlaylogOfficialData?.matchAwardVotes || [];
   const awardsEnabled = isAwardVotingEnabled(match);
   const awardBlock = (title, result, type) => {
     const winnerIds = result?.winnerUserIds || [];
-    const reasons = votes
-      .filter((vote) =>
-        vote.matchId === selectedMatchId
-        && vote.type === type
-        && winnerIds.includes(vote.targetUserId)
-        && vote.reason)
-      .map((vote) => `<li>${escapeHtml(vote.reason)}</li>`)
-      .join("");
-    const winners = winnerIds.length
-      ? winnerIds.map(displayUserName).join(" · ")
-      : "공개 후 집계";
-    return `<section class="result-section"><div class="result-section-head">${title}<span>${result?.voteCount || 0}표</span></div><p>${winners}</p>${reasons ? `<ul class="result-reasons">${reasons}</ul>` : ""}</section>`;
+    const blocks = awardWinnerBlocks(result, type, "compact");
+    return `<section class="result-section"><div class="result-section-head">${title}<span>${awardVoteLabel(result, winnerIds)}</span></div>${blocks}</section>`;
   };
   const matchDateText = match ? matchDisplayMeta(match) : "경기 정보 없음";
   return `
@@ -2751,44 +2740,70 @@ function matchResultDetailTemplate() {
   `;
 }
 
-function awardSummaryCard(title, result, type) {
-  const votes = window.PlaylogOfficialData?.matchAwardVotes || [];
-  const sourceCards = isQuickMatch(activeMatchRecord())
-    ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
-    : (window.PlaylogOfficialData?.playerMatchCards || []);
-  const winnerIds = result?.winnerUserIds || [];
-  const winnerCards = winnerIds.map((winnerId) => sourceCards
-    .find((card) => card.matchId === selectedMatchId && card.userId === winnerId && isPublishedMatchCard(card))).filter(Boolean);
-  const identity = winnerCards[0] ? representativeMatchIdentity(winnerCards[0]) : null;
-  const winnerNames = winnerIds.length
-    ? winnerIds.map(displayUserName).join(" · ")
-    : "공개 후 집계";
-  const winnerMeta = identity
-    ? `${identity.label} · ${identity.code} · ${identity.playStyle}`
-    : "";
-  const winnerOvr = winnerCards.length ? winnerCards.map((card) => `OVR ${card.overallRating}`).join(" · ") : "";
-  const reasons = votes
+function awardVoteLabel(result, winnerIds = []) {
+  const count = result?.voteCount || 0;
+  return winnerIds.length > 1 ? `각 ${count}표` : `${count}표`;
+}
+
+function awardReasonPlaceholderFor(type) {
+  return type === "next_star" ? nextStarReasonPlaceholder : pomReasonPlaceholder;
+}
+
+function awardWinnerReasons(type, winnerId) {
+  const seen = new Set();
+  return (window.PlaylogOfficialData?.matchAwardVotes || [])
     .filter((vote) =>
       vote.matchId === selectedMatchId
       && vote.type === type
-      && winnerIds.includes(vote.targetUserId))
-    .map((vote) => sanitizeOptionalText(vote.reason, [pomReasonPlaceholder, nextStarReasonPlaceholder]))
-    .filter(Boolean);
+      && vote.targetUserId === winnerId)
+    .map((vote) => sanitizeOptionalText(vote.reason, [awardReasonPlaceholderFor(type)]))
+    .filter(Boolean)
+    .filter((reason) => {
+      const key = reason.replace(/\s+/g, " ").trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function awardWinnerBlocks(result, type, variant = "card") {
+  const match = activeMatchRecord();
+  const sourceCards = isQuickMatch(match)
+    ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+    : (window.PlaylogOfficialData?.playerMatchCards || []);
+  const winnerIds = result?.winnerUserIds || [];
+  if (!winnerIds.length) return `<p class="result-award-empty">공개 후 집계</p>`;
+  return winnerIds.map((winnerId) => {
+    const card = sourceCards.find((item) =>
+      item.matchId === selectedMatchId
+      && item.userId === winnerId
+      && isPublishedMatchCard(item));
+    const identity = card ? representativeMatchIdentity(card) : null;
+    const name = displayUserName(winnerId);
+    const reasons = awardWinnerReasons(type, winnerId);
+    return `
+      <div class="result-award-player ${variant === "compact" ? "compact" : ""}">
+        <i>${name.slice(0, 1)}</i>
+        <div>
+          <b>${name}</b>
+          ${identity ? `<small>${identity.label} · ${identity.code} · ${identity.playStyle}</small>` : ""}
+          ${card ? `<em>OVR ${card.overallRating}</em>` : ""}
+          ${reasons.length ? `<div class="result-award-reasons"><small>선정 이유</small>${reasons.map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}</div>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function awardSummaryCard(title, result, type) {
+  const winnerIds = result?.winnerUserIds || [];
   return `
     <article class="result-award-card">
       <div class="result-award-title">
         <strong>${title}</strong>
-        <span>${result?.voteCount || 0}표</span>
+        <span>${awardVoteLabel(result, winnerIds)}</span>
       </div>
-      <div class="result-award-player">
-        <i>${winnerNames.slice(0, 1)}</i>
-        <div>
-          <b>${winnerNames}</b>
-          ${winnerMeta ? `<small>${winnerMeta}</small>` : ""}
-          ${winnerOvr ? `<em>${winnerOvr}</em>` : ""}
-        </div>
-      </div>
-      ${reasons.length ? `<div class="result-award-reasons"><small>선정 이유</small>${reasons.map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}</div>` : ""}
+      ${awardWinnerBlocks(result, type)}
     </article>
   `;
 }
