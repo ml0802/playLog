@@ -208,6 +208,33 @@ function evaluationCompletion(participants, evaluations) {
   });
 }
 
+function normalizeComment(comment) {
+  return String(comment || "").replace(/\s+/g, " ").trim();
+}
+
+function duplicateCommentReport(evaluations) {
+  const grouped = new Map();
+  evaluations
+    .filter((evaluation) => evaluation.isActive !== false)
+    .forEach((evaluation) => {
+      const comment = normalizeComment(evaluation.overallComment);
+      if (!comment) return;
+      const key = `${evaluation.targetUserId}::${comment}`;
+      const item = grouped.get(key) || {
+        targetUserId: evaluation.targetUserId,
+        comment,
+        count: 0,
+        evaluationIds: [],
+        evaluatorUserIds: [],
+      };
+      item.count += 1;
+      item.evaluationIds.push(evaluation.id);
+      item.evaluatorUserIds.push(evaluation.evaluatorUserId);
+      grouped.set(key, item);
+    });
+  return Array.from(grouped.values()).filter((item) => item.count > 1);
+}
+
 async function main() {
   const match = await maybeSingle("matches", "*", (query) => query.eq("id", matchId));
   if (!match) throw new Error(`No match found for match_id=${matchId}`);
@@ -282,6 +309,7 @@ async function main() {
     participantsCount: participants.length,
     evaluationsCount: evaluations.length,
     activeEvaluationsCount: evaluations.filter((evaluation) => evaluation.isActive !== false).length,
+    duplicateComments: duplicateCommentReport(evaluations),
     pomVotesCount: allVotes.filter((vote) => vote.type === "pom").length,
     nextStarVotesCount: allVotes.filter((vote) => vote.type === "next_star").length,
     playerMatchCardsCount: matchType === "official" ? existingCards.length : otherCards.length,

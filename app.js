@@ -2183,11 +2183,29 @@ function homeMatchSummary(card) {
   `;
 }
 
+function commentDedupeKey(comment) {
+  return String(comment || "").replace(/\s+/g, " ").trim();
+}
+
+function uniqueComments(comments = []) {
+  const seen = new Set();
+  return comments.filter((comment) => {
+    const key = commentDedupeKey(comment);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function receivedComments(matchId, userId) {
-  return activeEvaluationCollection(matchId)
-    .filter((evaluation) => evaluation.matchId === matchId && evaluation.targetUserId === userId)
+  return uniqueComments(activeEvaluationCollection(matchId)
+    .filter((evaluation) =>
+      evaluation.matchId === matchId
+      && evaluation.targetUserId === userId
+      && evaluation.isActive !== false,
+    )
     .map((evaluation) => sanitizeOptionalText(evaluation.overallComment, [evaluationCommentPlaceholder]))
-    .filter(Boolean);
+    .filter(Boolean));
 }
 
 function activeEvaluationsForCard(card) {
