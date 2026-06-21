@@ -1372,9 +1372,32 @@ async function upsertGeneratedCards({ matchCard = null, currentStats = null, mon
   let savedMonthlyCard = null;
 
   if (matchCard) {
+    const matchCardPayload = toPlayerMatchCardRow(matchCard);
+    console.log("[Playlog] player_match_cards upsert payload", {
+      table: tables.matchCards,
+      matchType,
+      cardOverallRating: matchCard.overallRating,
+      cardOverallRatingType: typeof matchCard.overallRating,
+      payloadOverallRating: matchCardPayload.overall_rating,
+      payloadOverallRatingType: typeof matchCardPayload.overall_rating,
+      payload: matchCardPayload,
+      sourceCard: matchCard,
+    });
+    if (!Number.isFinite(Number(matchCardPayload.overall_rating))) {
+      console.error("[Playlog] invalid overall_rating before player_match_cards upsert", {
+        table: tables.matchCards,
+        matchType,
+        id: matchCardPayload.id,
+        matchId: matchCardPayload.match_id,
+        userId: matchCardPayload.user_id,
+        payloadOverallRating: matchCardPayload.overall_rating,
+        sourceCard: matchCard,
+      });
+      throw new Error("player_match_cards overall_rating 계산 실패: insert payload 로그를 확인해주세요.");
+    }
     const { data, error } = await supabase
       .from(tables.matchCards)
-      .upsert(toPlayerMatchCardRow(matchCard), { onConflict: "id" })
+      .upsert(matchCardPayload, { onConflict: "id" })
       .select("*");
     if (error) {
       reportSupabaseQueryError("upsertGeneratedCards:player_match_cards", error);

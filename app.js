@@ -475,6 +475,18 @@ function buildGeneratedCardBundle({ matchId, userId, generatedAt }) {
   );
   if (!matchCard) return null;
   if (quick) matchCard.cardType = "quick";
+  console.log("[Playlog] generated match card OVR check", {
+    matchId,
+    userId,
+    matchType: quick ? "quick" : "official",
+    overallRating: matchCard.overallRating,
+    overallRatingType: typeof matchCard.overallRating,
+    commonAverage: matchCard.commonAverage,
+    positionAverage: matchCard.positionAverage,
+    matchScore: matchCard.matchScore,
+    evaluatorCount: matchCard.evaluatorCount,
+    card: matchCard,
+  });
 
   const sourceMatchCards = quick
     ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
@@ -3596,6 +3608,16 @@ function renderEvaluation() {
       matchId: selectedMatchId,
       userId: selectedPlayerId(),
       evaluations: [buildEvaluation("evaluation:preview")],
+    });
+    console.log("[Playlog] evaluation preview OVR check", {
+      matchId: selectedMatchId,
+      userId: selectedPlayerId(),
+      previewOverallRating: previewCard?.overallRating,
+      previewOverallRatingType: typeof previewCard?.overallRating,
+      previewCommonAverage: previewCard?.commonAverage,
+      previewPositionAverage: previewCard?.positionAverage,
+      previewMatchScore: previewCard?.matchScore,
+      previewCard,
     });
     pane.innerHTML = `<label class="field-label evaluation-comment"><span>이 선수 한 줄 평</span><textarea id="evaluationComment" rows="4" placeholder="${evaluationCommentPlaceholder}">${escapeHtml(overallComment)}</textarea></label><div class="self-result"><span>${selectedTargetLabel} 예상 OVR</span><strong>${previewCard.overallRating}</strong></div>${actions("이전", "평가 저장 완료")}`;
   } else if (isAwardStep) {
