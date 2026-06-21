@@ -235,6 +235,25 @@ function duplicateCommentReport(evaluations) {
   return Array.from(grouped.values()).filter((item) => item.count > 1);
 }
 
+function positionIdentityDiagnostics(cards, participantsCount) {
+  const maxPositionEvaluations = Math.max(participantsCount - 1, 0);
+  return cards.map((card) => {
+    const entries = Object.entries(card.selectedPositionSummary || {})
+      .filter(([, item]) => Number(item?.count) > 0)
+      .map(([position, item]) => ({ position, count: Number(item.count) }));
+    const totalCount = entries.reduce((sum, entry) => sum + entry.count, 0);
+    return {
+      cardId: card.id,
+      userId: card.userId,
+      evaluatorCount: card.evaluatorCount,
+      maxPositionEvaluations,
+      totalPositionCount: totalCount,
+      exceedsParticipantLimit: totalCount > maxPositionEvaluations,
+      entries,
+    };
+  });
+}
+
 async function main() {
   const match = await maybeSingle("matches", "*", (query) => query.eq("id", matchId));
   if (!match) throw new Error(`No match found for match_id=${matchId}`);
@@ -273,6 +292,7 @@ async function main() {
       evaluations: engineEvaluations,
       previousCard,
       previousCards,
+      participantUserIds: participantIds,
       generatedAt: publishedAt,
     });
     if (!card) {
@@ -310,6 +330,7 @@ async function main() {
     evaluationsCount: evaluations.length,
     activeEvaluationsCount: evaluations.filter((evaluation) => evaluation.isActive !== false).length,
     duplicateComments: duplicateCommentReport(evaluations),
+    positionIdentityDiagnostics: positionIdentityDiagnostics(generatedCards, participants.length),
     pomVotesCount: allVotes.filter((vote) => vote.type === "pom").length,
     nextStarVotesCount: allVotes.filter((vote) => vote.type === "next_star").length,
     playerMatchCardsCount: matchType === "official" ? existingCards.length : otherCards.length,

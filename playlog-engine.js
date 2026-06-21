@@ -302,6 +302,23 @@
     }, {});
   }
 
+  function evaluationTimestamp(evaluation) {
+    const timestamp = new Date(evaluation.updatedAt || evaluation.createdAt || 0).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function latestEvaluationPerEvaluator(evaluations) {
+    const byEvaluator = new Map();
+    evaluations.forEach((evaluation) => {
+      const key = evaluation.evaluatorUserId;
+      const existing = byEvaluator.get(key);
+      if (!existing || evaluationTimestamp(evaluation) >= evaluationTimestamp(existing)) {
+        byEvaluator.set(key, evaluation);
+      }
+    });
+    return Array.from(byEvaluator.values());
+  }
+
   function calculateMainEvaluatedPosition(evaluations) {
     const summary = calculateSelectedPositionSummary(evaluations);
     return POSITIONS
@@ -752,13 +769,25 @@
     };
   }
 
-  function generatePlayerMatchCard({ matchId, userId, evaluations, previousCard = null, previousCards = [], generatedAt = new Date().toISOString() }) {
-    const peerEvaluations = evaluations.filter((evaluation) =>
+  function generatePlayerMatchCard({
+    matchId,
+    userId,
+    evaluations,
+    previousCard = null,
+    previousCards = [],
+    participantUserIds = null,
+    generatedAt = new Date().toISOString(),
+  }) {
+    const participantSet = Array.isArray(participantUserIds) && participantUserIds.length
+      ? new Set(participantUserIds)
+      : null;
+    const peerEvaluations = latestEvaluationPerEvaluator(evaluations.filter((evaluation) =>
       evaluation.matchId === matchId
       && evaluation.targetUserId === userId
       && evaluation.evaluatorUserId !== userId
-      && evaluation.isActive !== false,
-    );
+      && evaluation.isActive !== false
+      && (!participantSet || (participantSet.has(evaluation.targetUserId) && participantSet.has(evaluation.evaluatorUserId))),
+    ));
     if (!peerEvaluations.length) return null;
     const scores = peerEvaluations.flatMap((evaluation) => evaluation.scores || []);
     const commonScores = scores.filter((score) => score.category === "common");

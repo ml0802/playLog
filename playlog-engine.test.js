@@ -63,6 +63,31 @@ assert.ok(card.weaknessesTop3.every((item) => card.matchAnalysisText.includes(it
 assert.ok(card.matchAnalysisText.includes("보완할 여지가 있습니다"));
 assert.equal(JSON.stringify(peerEvaluations), snapshot);
 
+const duplicatePositionCard = engine.generatePlayerMatchCard({
+  matchId,
+  userId,
+  participantUserIds: [userId, "user:a", "user:b"],
+  evaluations: [
+    { ...evaluation("old:a", "user:a", "am", common, {
+      chanceMaking: 6, gameControl: 6, creativeBuildUp: 6, pressureEscape: 6, forwardProgression: 6,
+    }), createdAt: "2026-05-27T00:00:00.000Z", updatedAt: "2026-05-27T00:00:00.000Z" },
+    { ...evaluation("new:a", "user:a", "attack", common, {
+      finishing: 7, attackingPositioning: 7, attackingLinkUp: 7, frontPressure: 7, ballKeeping: 7,
+    }), createdAt: "2026-05-27T00:01:00.000Z", updatedAt: "2026-05-27T00:01:00.000Z" },
+    evaluation("b", "user:b", "free", common, {
+      allAreaInvolvement: 6, spaceConnection: 6, activityRange: 6, fluidity: 6, allRoundContribution: 6,
+    }),
+    evaluation("outsider", "user:outsider", "dm", common, {
+      defensiveCoverage: 10, ballRecovery: 10, buildUpSupport: 10, transitionDefense: 10, balanceControl: 10,
+    }),
+  ],
+});
+assert.equal(duplicatePositionCard.evaluatorCount, 2);
+assert.equal(duplicatePositionCard.selectedPositionSummary.attack.count, 1);
+assert.equal(duplicatePositionCard.selectedPositionSummary.free.count, 1);
+assert.equal(duplicatePositionCard.selectedPositionSummary.am.count, 0);
+assert.equal(duplicatePositionCard.selectedPositionSummary.dm.count, 0);
+
 const tiedAnalysis = engine.generateMatchAnalysis([
   { category: "common", key: "firstTouch", score: 9 },
   { category: "position", key: "chanceMaking", score: 8 },

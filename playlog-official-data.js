@@ -292,6 +292,8 @@
   function generateCardFor(match, targetUserId, generatedAt) {
     const cardCollection = cardCollectionForMatch(match);
     const evaluationCollection = evaluationCollectionForMatch(match);
+    const matchRecord = matches.find((item) => item.id === match);
+    const participantUserIds = (matchRecord?.participants || []).map((participant) => participant.userId);
     const engineEvaluations = matchTypeFor(match) === "quick"
       ? engine.expandQuickEvaluations(evaluationCollection)
       : evaluationCollection;
@@ -306,6 +308,7 @@
       userId: targetUserId,
       evaluations: engineEvaluations,
       previousCards: matchTypeFor(match) === "quick" ? previousQuickCards : previousCards,
+      participantUserIds,
       generatedAt,
     });
     if (!card) return null;
