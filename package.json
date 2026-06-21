@@ -3,6 +3,7 @@
     "dev": "node ./node_modules/vite/bin/vite.js --host 0.0.0.0",
     "build": "node scripts/build.mjs",
     "maintenance:derived": "node scripts/supabase-derived-maintenance.mjs",
+    "repair:match-cards": "node scripts/supabase-match-card-repair.mjs",
     "preview": "node ./node_modules/vite/bin/vite.js preview --host 0.0.0.0"
   },
   "engines": {

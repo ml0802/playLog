@@ -533,9 +533,9 @@ function buildGeneratedCardBundle({ matchId, userId, generatedAt }) {
   return { matchCard, currentStats, monthlyCard };
 }
 
-async function saveGeneratedCardsForParticipant(matchId, userId, generatedAt) {
+async function saveGeneratedCardsForParticipant(matchId, userId, generatedAt, { allowUnpublished = false } = {}) {
   const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
-  if (match?.status !== "published") {
+  if (match?.status !== "published" && !allowUnpublished) {
     throw new Error("공개되지 않은 경기의 선수카드는 저장할 수 없습니다.");
   }
   console.info("Supabase 카드 생성 시작", { matchId, userId, generatedAt });
@@ -563,8 +563,34 @@ function isEvaluationDeadlineReached(match, now = new Date().toISOString()) {
 }
 
 async function publishCompletedParticipants(matchId, completion, publishedAt) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
+  if (!match) throw new Error(`경기 데이터를 찾을 수 없습니다: ${matchId}`);
+  const generatedCards = [];
+  const cardParticipants = (completion.participants?.length ? completion.participants : match.participants || [])
+    .filter((participant) => participant.evaluationCompleted === true);
+  console.info("Supabase 공개 전 카드 생성 대상", {
+    matchId,
+    matchStatus: match.status,
+    participantsCount: (match.participants || []).length,
+    evaluationsCount: activeEvaluationCollection(matchId).filter((evaluation) => evaluation.matchId === matchId && evaluation.isActive !== false).length,
+    participants: cardParticipants,
+    completionParticipants: completion.participants,
+  });
+  for (const participant of cardParticipants) {
+    let savedCards = null;
+    try {
+      savedCards = await saveGeneratedCardsForParticipant(matchId, participant.userId, publishedAt, { allowUnpublished: true });
+    } catch (error) {
+      console.error("Supabase 카드 upsert 실패", { matchId, userId: participant.userId, error });
+      throw error;
+    }
+    if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
+  }
+  if (generatedCards.length !== cardParticipants.length) {
+    throw new Error(`카드 생성 수가 참가자 수와 다릅니다: ${generatedCards.length}/${cardParticipants.length}`);
+  }
   const publishedRow = await publishMatchAsync(matchId, publishedAt);
-  console.info("Supabase 경기 공개 반환 row", { matchId, publishedRow });
+  console.info("Supabase 카드 생성 후 경기 공개 반환 row", { matchId, publishedRow });
   let refreshedMatches = [];
   try {
     refreshedMatches = await refreshMatchesAsync(currentUserId);
@@ -576,25 +602,6 @@ async function publishCompletedParticipants(matchId, completion, publishedAt) {
     || publishedRow;
   if (publishedMatch?.status !== "published") {
     throw new Error(`경기 공개 상태 동기화에 실패했습니다: ${matchId}`);
-  }
-  const generatedCards = [];
-  const cardParticipants = (completion.participants?.length ? completion.participants : publishedMatch.participants || [])
-    .filter((participant) => participant.evaluationCompleted === true);
-  console.info("Supabase 공개 후 카드 생성 대상", {
-    matchId,
-    participants: cardParticipants,
-    publishedParticipants: publishedMatch.participants,
-    completionParticipants: completion.participants,
-  });
-  for (const participant of cardParticipants) {
-    let savedCards = null;
-    try {
-      savedCards = await saveGeneratedCardsForParticipant(matchId, participant.userId, publishedAt);
-    } catch (error) {
-      console.error("Supabase 카드 upsert 실패", { matchId, userId: participant.userId, error });
-      throw error;
-    }
-    if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
   }
   const refreshedCards = await refreshPlayerCardsAsync(currentUserId);
   console.info("Supabase 카드 refresh 완료", {
@@ -896,11 +903,11 @@ function matchProgress(match) {
 }
 
 function currentUserMatchState(match) {
-  if (match.status === "published") return "평가완료";
   const participant = (match.participants || []).find((item) => item.userId === currentUserId);
   const hasTargets = (match.participants || []).some((item) => item.userId !== currentUserId);
   const evaluationCompleted = participant?.evaluationCompleted || (hasTargets && matchRemainingTargets(match).length === 0);
   if (evaluationCompleted && !hasRequiredAwardVotes(match.id)) return "투표 필요";
+  if (match.status === "published") return "평가완료";
   if (evaluationCompleted) return "평가완료";
   const progress = matchProgress(match);
   return progress.completedCount > 0 ? "평가중" : "미평가";
@@ -915,8 +922,8 @@ function matchStatusBadge(match) {
 }
 
 function matchActionLabel(match) {
-  if (match.status === "published") return "결과 보기";
   if (currentUserMatchState(match) === "투표 필요") return "투표 진행";
+  if (match.status === "published") return "결과 보기";
   if (currentUserMatchState(match) === "평가완료") return "공개 대기";
   return "평가 진행";
 }
@@ -3416,6 +3423,13 @@ function enterEvaluationFlow(match) {
     currentUserId,
   });
   const remaining = matchRemainingTargets(match);
+  if (currentUserMatchState(match) === "투표 필요") {
+    loadAwardDraft();
+    justCompletedAwards = false;
+    currentStep = 6;
+    setView("evaluate");
+    return;
+  }
   if (match.status === "published") {
     openMatchResultView("summary");
     return;
@@ -4939,10 +4953,6 @@ function bindInteractions() {
     if (toastButton) showToast(toastButton.dataset.toast);
   });
   document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => {
-    if (button.id === "activeMatchAction" && activeMatchRecord()?.status === "published") {
-      openMatchResultView("summary");
-      return;
-    }
     if (button.id === "activeMatchAction" && activeMatchRecord()) {
       enterEvaluationFlow(activeMatchRecord());
       return;
