@@ -66,7 +66,7 @@ assert.equal(JSON.stringify(peerEvaluations), snapshot);
 const duplicatePositionCard = engine.generatePlayerMatchCard({
   matchId,
   userId,
-  participantUserIds: [userId, "user:a", "user:b"],
+  participantUserIds: [userId, "user:a", "user:b", "user:c", "user:d"],
   evaluations: [
     { ...evaluation("old:a", "user:a", "am", common, {
       chanceMaking: 6, gameControl: 6, creativeBuildUp: 6, pressureEscape: 6, forwardProgression: 6,
@@ -77,16 +77,30 @@ const duplicatePositionCard = engine.generatePlayerMatchCard({
     evaluation("b", "user:b", "free", common, {
       allAreaInvolvement: 6, spaceConnection: 6, activityRange: 6, fluidity: 6, allRoundContribution: 6,
     }),
+    evaluation("c", "user:c", "dm", common, {
+      defensiveCoverage: 6, ballRecovery: 6, buildUpSupport: 6, transitionDefense: 6, balanceControl: 6,
+    }),
+    evaluation("d", "user:d", "defense", common, {
+      manMarking: 6, coverBalance: 6, defensiveBuildUp: 6, physicalContest: 6, lineControl: 6,
+    }),
+    { ...evaluation("inactive:b", "user:b", "am", common, {
+      chanceMaking: 10, gameControl: 10, creativeBuildUp: 10, pressureEscape: 10, forwardProgression: 10,
+    }), isActive: false },
     evaluation("outsider", "user:outsider", "dm", common, {
       defensiveCoverage: 10, ballRecovery: 10, buildUpSupport: 10, transitionDefense: 10, balanceControl: 10,
     }),
   ],
 });
-assert.equal(duplicatePositionCard.evaluatorCount, 2);
+const duplicatePositionTotal = Object.values(duplicatePositionCard.selectedPositionSummary)
+  .reduce((sum, item) => sum + item.count, 0);
+assert.equal(duplicatePositionCard.evaluatorCount, 4);
+assert.equal(duplicatePositionTotal, 4);
 assert.equal(duplicatePositionCard.selectedPositionSummary.attack.count, 1);
 assert.equal(duplicatePositionCard.selectedPositionSummary.free.count, 1);
+assert.equal(duplicatePositionCard.selectedPositionSummary.dm.count, 1);
+assert.equal(duplicatePositionCard.selectedPositionSummary.defense.count, 1);
 assert.equal(duplicatePositionCard.selectedPositionSummary.am.count, 0);
-assert.equal(duplicatePositionCard.selectedPositionSummary.dm.count, 0);
+assert.ok(duplicatePositionTotal <= 4);
 
 const tiedAnalysis = engine.generateMatchAnalysis([
   { category: "common", key: "firstTouch", score: 9 },
