@@ -419,6 +419,10 @@ function toPlayerMatchCardRow(card) {
   };
 }
 
+function isValidOverallRating(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function fromPlayerCurrentStatsRow(row) {
   if (!row) return null;
   return {
@@ -1383,7 +1387,7 @@ async function upsertGeneratedCards({ matchCard = null, currentStats = null, mon
       payload: matchCardPayload,
       sourceCard: matchCard,
     });
-    if (!Number.isFinite(Number(matchCardPayload.overall_rating))) {
+    if (!isValidOverallRating(matchCardPayload.overall_rating)) {
       console.error("[Playlog] invalid overall_rating before player_match_cards upsert", {
         table: tables.matchCards,
         matchType,
