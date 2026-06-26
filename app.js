@@ -266,6 +266,10 @@ function completedParticipantCount(match) {
   return (match?.participants || []).filter((participant) => participant?.evaluationCompleted === true).length;
 }
 
+function participantUserId(participant) {
+  return typeof participant === "string" ? participant : participant?.userId || participant?.user_id || null;
+}
+
 function matchPublishReadiness(match) {
   if (!match) {
     return {
@@ -276,6 +280,7 @@ function matchPublishReadiness(match) {
       totalCount: 0,
       expectedCardCount: 0,
       cardCount: 0,
+      hasEnoughCards: false,
       missingCards: false,
     };
   }
@@ -295,6 +300,7 @@ function matchPublishReadiness(match) {
     totalCount: progress.totalCount,
     expectedCardCount,
     cardCount,
+    hasEnoughCards: expectedCardCount > 0 && cardCount >= expectedCardCount,
     missingCards: match.status !== "published" && (allComplete || deadlineReached) && cardCount < expectedCardCount,
   };
 }
@@ -713,33 +719,53 @@ async function publishCompletedParticipants(matchId, completion, publishedAt) {
   const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
   if (!match) throw new Error(`경기 데이터를 찾을 수 없습니다: ${matchId}`);
   clearPublishFailure(matchId);
-  const generatedCards = [];
-  const cardParticipants = (completion.participants?.length ? completion.participants : match.participants || [])
-    .filter((participant) => participant.evaluationCompleted === true);
+  let generatedCards = [];
+  const completionParticipants = completion.participants?.length ? completion.participants : match.participants || [];
+  const cardParticipants = completion.allComplete === true
+    ? completionParticipants
+    : completionParticipants.filter((participant) => participant.evaluationCompleted === true);
+  const existingCards = cardsForMatch(match)
+    .filter((card) => typeof card?.overallRating === "number" || typeof card?.overall_rating === "number");
   console.info("Supabase 공개 전 카드 생성 대상", {
     matchId,
     matchStatus: match.status,
     participantsCount: (match.participants || []).length,
+    existingCardsCount: existingCards.length,
     evaluationsCount: activeEvaluationCollection(matchId).filter((evaluation) => evaluation.matchId === matchId && evaluation.isActive !== false).length,
     participants: cardParticipants,
     completionParticipants: completion.participants,
   });
-  for (const participant of cardParticipants) {
-    let savedCards = null;
-    try {
-      savedCards = await saveGeneratedCardsForParticipant(matchId, participant.userId, publishedAt, { allowUnpublished: true });
-    } catch (error) {
-      const diagnostics = cardGenerationDiagnostics(matchId, participant.userId);
-      console.error("Supabase 카드 upsert 실패", { matchId, userId: participant.userId, diagnostics, error });
-      setPublishFailure(matchId, error, {
-        stage: "saveGeneratedCardsForParticipant",
-        targetUserId: participant.userId,
-        targetName: displayUserName(participant.userId),
-        diagnostics,
-      });
-      throw error;
+  if (existingCards.length >= cardParticipants.length && cardParticipants.length > 0) {
+    console.info("Supabase 공개 전 기존 선수카드 충분 - 카드 재생성 생략", {
+      matchId,
+      existingCardsCount: existingCards.length,
+      expectedCount: cardParticipants.length,
+      cards: existingCards.map((card) => ({
+        id: card.id,
+        userId: card.userId || card.user_id,
+        overallRating: card.overallRating ?? card.overall_rating,
+      })),
+    });
+    generatedCards = existingCards;
+  } else {
+    for (const participant of cardParticipants) {
+      const targetUserId = participantUserId(participant);
+      let savedCards = null;
+      try {
+        savedCards = await saveGeneratedCardsForParticipant(matchId, targetUserId, publishedAt, { allowUnpublished: true });
+      } catch (error) {
+        const diagnostics = cardGenerationDiagnostics(matchId, targetUserId);
+        console.error("Supabase 카드 upsert 실패", { matchId, userId: targetUserId, diagnostics, error });
+        setPublishFailure(matchId, error, {
+          stage: "saveGeneratedCardsForParticipant",
+          targetUserId,
+          targetName: displayUserName(targetUserId),
+          diagnostics,
+        });
+        throw error;
+      }
+      if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
     }
-    if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
   }
   if (generatedCards.length !== cardParticipants.length) {
     const error = new Error(`카드 생성 수가 참가자 수와 다릅니다: ${generatedCards.length}/${cardParticipants.length}`);
@@ -748,8 +774,8 @@ async function publishCompletedParticipants(matchId, completion, publishedAt) {
       generatedCount: generatedCards.length,
       expectedCount: cardParticipants.length,
       participants: cardParticipants.map((participant) => ({
-        userId: participant.userId,
-        name: displayUserName(participant.userId),
+        userId: participantUserId(participant),
+        name: displayUserName(participantUserId(participant)),
       })),
     });
     throw error;
@@ -808,6 +834,11 @@ async function retryPublishMatch(match, { toastOnSuccess = true } = {}) {
   if (manualPublishInFlight.has(match.id)) return { published: false, generatedCards: [] };
   manualPublishInFlight.add(match.id);
   try {
+    try {
+      await refreshPlayerCardsAsync(currentUserId);
+    } catch (error) {
+      console.warn("[Playlog] publish retry card refresh failed; continuing with local cards", { matchId: match.id, error });
+    }
     console.info("[Playlog] manual publish retry start", {
       matchId: match.id,
       matchTitle: match.title,
@@ -1121,7 +1152,9 @@ function currentUserMatchState(match) {
 
 function matchStatusBadge(match) {
   if (match.status === "published") return "결과공개";
-  if (publishFailureFor(match.id) || matchPublishReadiness(match).missingCards) return "카드 생성 재시도";
+  const readiness = matchPublishReadiness(match);
+  if (readiness.hasEnoughCards && readiness.ready) return "결과공개처리";
+  if (publishFailureFor(match.id) || readiness.missingCards) return "카드 생성 재시도";
   if (currentUserMatchState(match) === "투표 필요") return "투표 필요";
   if (currentUserMatchState(match) === "평가완료") return "결과공개대기";
   if (match.status === "closed") return "경기완료";
@@ -1554,7 +1587,8 @@ function renderActiveMatchProgress() {
   const waiting = window.PlaylogOfficialData.getPublishWaitingStatus?.(selectedMatchId);
   const readiness = matchPublishReadiness(match);
   const publishFailure = publishFailureFor(match.id);
-  const publishBlocked = Boolean(publishFailure) || readiness.missingCards;
+  const publishNeedsStatusUpdate = readiness.ready && readiness.hasEnoughCards;
+  const publishBlocked = !publishNeedsStatusUpdate && (Boolean(publishFailure) || readiness.missingCards);
   const pomResult = match.status === "published"
     ? window.PlaylogOfficialData.calculateMatchAward?.(selectedMatchId, "pom")
     : null;
@@ -1564,14 +1598,18 @@ function renderActiveMatchProgress() {
   const progressPercent = progress.totalCount ? Math.round((progress.completedCount / progress.totalCount) * 100) : 0;
   document.querySelector("#activeMatchStatus").textContent = match.status === "published"
     ? "결과 공개"
-    : publishBlocked
+    : publishNeedsStatusUpdate
+      ? "결과 공개 처리 필요"
+      : publishBlocked
       ? "카드 생성 재시도"
       : "결과 공개 대기";
   document.querySelector("#activeMatchTitle").textContent = match.title;
   document.querySelector("#activeMatchMeta").textContent = matchDisplayMeta(match);
   const waitingElement = document.querySelector("#activeMatchWaiting");
-  waitingElement.hidden = !(waiting || publishBlocked);
-  if (publishBlocked) {
+  waitingElement.hidden = !(waiting || publishBlocked || publishNeedsStatusUpdate);
+  if (publishNeedsStatusUpdate) {
+    waitingElement.textContent = `선수카드 ${readiness.cardCount}/${readiness.expectedCardCount} 생성 완료 · 결과 공개 처리만 남았습니다`;
+  } else if (publishBlocked) {
     waitingElement.textContent = `선수카드 생성이 완료되지 않았습니다 · ${readiness.cardCount}/${readiness.expectedCardCount} 카드 · 재시도 필요`;
   } else if (waiting) {
     waitingElement.textContent = pomResult?.winnerUserIds?.length || nextStarResult?.winnerUserIds?.length
@@ -3956,7 +3994,8 @@ function renderEvaluation() {
   } else {
     const resultReady = !match || match.status === "published";
     const readiness = matchPublishReadiness(match);
-    const publishBlocked = match && !resultReady && (publishFailureFor(match.id) || readiness.missingCards);
+    const publishNeedsStatusUpdate = match && !resultReady && readiness.ready && readiness.hasEnoughCards;
+    const publishBlocked = match && !resultReady && !publishNeedsStatusUpdate && (publishFailureFor(match.id) || readiness.missingCards);
     const actionLabel = remaining.length
       ? "다음 선수 평가하기"
       : resultReady
@@ -3968,10 +4007,12 @@ function renderEvaluation() {
     const completeTitle = hasStoredAwards ? "경기 평가가 완료되었습니다." : "평가 저장 완료!";
     const completeCopy = resultReady
       ? "결과가 공개되었습니다."
+      : publishNeedsStatusUpdate
+        ? "선수카드는 생성되었습니다.<br>결과 공개 처리만 다시 시도하면 됩니다."
       : publishBlocked
         ? "평가는 저장됐지만 선수카드 생성이 완료되지 않았습니다.<br>결과 공개를 다시 시도해주세요."
         : "평가가 저장되었습니다.<br>결과 공개를 기다리는 중입니다.";
-    const resultStatusLabel = resultReady ? (lastGeneratedCard?.overallRating || "-") : publishBlocked ? "재시도 필요" : "대기";
+    const resultStatusLabel = resultReady ? (lastGeneratedCard?.overallRating || "-") : publishNeedsStatusUpdate ? "공개 처리 필요" : publishBlocked ? "재시도 필요" : "대기";
     pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>${completeTitle}</h2><p>${completeCopy}</p>${awardNote}<div class="self-result"><span>${selectedTargetLabel} ${resultReady ? "생성 OVR" : "결과 상태"}</span><strong>${resultStatusLabel}</strong></div><button class="primary full" data-complete-action type="button">${actionLabel}</button>${match && remaining.length === 0 ? '<button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요?</button>' : ""}</div>`;
     pane.querySelector("[data-complete-action]")?.addEventListener("click", async () => {
       if (remaining.length) {

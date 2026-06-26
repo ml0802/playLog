@@ -385,13 +385,32 @@ async function main() {
   if (invalidGeneratedCards.length) {
     throw new Error(`Invalid generated cards found; refusing to run. Count=${invalidGeneratedCards.length}`);
   }
-  if (!payloads.length) throw new Error("No card payloads generated; refusing to run.");
-  const { data, error } = await supabase
-    .from(matchCardTable)
-    .upsert(payloads, { onConflict: "id" })
-    .select("id,match_id,user_id,overall_rating");
-  if (error) throw error;
-  console.log("[repair] upserted cards", data);
+  const hasEnoughExistingCards = existingCards.length >= targetParticipants.length && targetParticipants.length > 0;
+  if (!payloads.length && !hasEnoughExistingCards) throw new Error("No card payloads generated and existing cards are not enough; refusing to run.");
+  if (payloads.length) {
+    const { data, error } = await supabase
+      .from(matchCardTable)
+      .upsert(payloads, { onConflict: "id" })
+      .select("id,match_id,user_id,overall_rating");
+    if (error) throw error;
+    console.log("[repair] upserted cards", data);
+  } else {
+    console.log("[repair] existing cards are enough; skipping card upsert", {
+      existingCardsCount: existingCards.length,
+      expectedCardsCount: targetParticipants.length,
+    });
+  }
+  const { data: publishedRows, error: publishError } = await supabase
+    .from("matches")
+    .update({ status: "published", published_at: publishedAt })
+    .eq("id", matchId)
+    .select("id,status,published_at");
+  if (publishError) throw publishError;
+  const publishedRow = Array.isArray(publishedRows) ? publishedRows[0] : publishedRows;
+  if (!publishedRow || publishedRow.status !== "published") {
+    throw new Error(`Failed to publish match ${matchId}; check matches UPDATE RLS/policies.`);
+  }
+  console.log("[repair] published match", publishedRow);
 }
 
 main().catch((error) => {
