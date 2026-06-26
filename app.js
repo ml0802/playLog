@@ -203,6 +203,8 @@ let justCompletedAwards = false;
 let matchResultMode = "summary";
 let matchResultSelectedCard = null;
 let evaluationMode = "list";
+const publishFailures = new Map();
+const manualPublishInFlight = new Set();
 let reflectionMode = "list";
 let reflectionSelectionMode = false;
 let selectedReflectionIds = new Set();
@@ -250,6 +252,72 @@ function activeEvaluationCollection(matchId = selectedMatchId) {
   return matchType(match) === "quick"
     ? (window.PlaylogOfficialData?.quickEvaluations || [])
     : (window.PlaylogOfficialData?.evaluations || []);
+}
+
+function cardsForMatch(match) {
+  if (!match) return [];
+  const source = isQuickMatch(match)
+    ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
+    : (window.PlaylogOfficialData?.playerMatchCards || []);
+  return source.filter((card) => card?.matchId === match.id || card?.match_id === match.id);
+}
+
+function completedParticipantCount(match) {
+  return (match?.participants || []).filter((participant) => participant?.evaluationCompleted === true).length;
+}
+
+function matchPublishReadiness(match) {
+  if (!match) {
+    return {
+      ready: false,
+      allComplete: false,
+      deadlineReached: false,
+      completedCount: 0,
+      totalCount: 0,
+      expectedCardCount: 0,
+      cardCount: 0,
+      missingCards: false,
+    };
+  }
+  const progress = matchProgress(match);
+  const allComplete = progress.totalCount > 0 && progress.remainingCount === 0;
+  const deadlineReached = isEvaluationDeadlineReached(match);
+  const completedCount = completedParticipantCount(match);
+  const expectedCardCount = allComplete
+    ? (match.participants || []).length
+    : completedCount;
+  const cardCount = cardsForMatch(match).length;
+  return {
+    ready: match.status !== "published" && (allComplete || deadlineReached),
+    allComplete,
+    deadlineReached,
+    completedCount: progress.completedCount,
+    totalCount: progress.totalCount,
+    expectedCardCount,
+    cardCount,
+    missingCards: match.status !== "published" && (allComplete || deadlineReached) && cardCount < expectedCardCount,
+  };
+}
+
+function setPublishFailure(matchId, error, context = {}) {
+  const message = error?.message || String(error || "알 수 없는 카드 생성 오류");
+  const failure = { message, context, at: new Date().toISOString() };
+  publishFailures.set(matchId, failure);
+  console.error("[Playlog] match publish failed", { matchId, ...failure });
+  return failure;
+}
+
+function clearPublishFailure(matchId) {
+  publishFailures.delete(matchId);
+}
+
+function publishFailureFor(matchId) {
+  return publishFailures.get(matchId) || null;
+}
+
+function matchNeedsPublishRetry(match) {
+  const readiness = matchPublishReadiness(match);
+  return match?.status !== "published" && readiness.ready;
 }
 
 function activeEvaluationForTarget(targetUserId = selectedPlayerId()) {
@@ -644,6 +712,7 @@ function isEvaluationDeadlineReached(match, now = new Date().toISOString()) {
 async function publishCompletedParticipants(matchId, completion, publishedAt) {
   const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
   if (!match) throw new Error(`경기 데이터를 찾을 수 없습니다: ${matchId}`);
+  clearPublishFailure(matchId);
   const generatedCards = [];
   const cardParticipants = (completion.participants?.length ? completion.participants : match.participants || [])
     .filter((participant) => participant.evaluationCompleted === true);
@@ -660,13 +729,30 @@ async function publishCompletedParticipants(matchId, completion, publishedAt) {
     try {
       savedCards = await saveGeneratedCardsForParticipant(matchId, participant.userId, publishedAt, { allowUnpublished: true });
     } catch (error) {
-      console.error("Supabase 카드 upsert 실패", { matchId, userId: participant.userId, error });
+      const diagnostics = cardGenerationDiagnostics(matchId, participant.userId);
+      console.error("Supabase 카드 upsert 실패", { matchId, userId: participant.userId, diagnostics, error });
+      setPublishFailure(matchId, error, {
+        stage: "saveGeneratedCardsForParticipant",
+        targetUserId: participant.userId,
+        targetName: displayUserName(participant.userId),
+        diagnostics,
+      });
       throw error;
     }
     if (savedCards?.matchCard) generatedCards.push(savedCards.matchCard);
   }
   if (generatedCards.length !== cardParticipants.length) {
-    throw new Error(`카드 생성 수가 참가자 수와 다릅니다: ${generatedCards.length}/${cardParticipants.length}`);
+    const error = new Error(`카드 생성 수가 참가자 수와 다릅니다: ${generatedCards.length}/${cardParticipants.length}`);
+    setPublishFailure(matchId, error, {
+      stage: "publishCompletedParticipants",
+      generatedCount: generatedCards.length,
+      expectedCount: cardParticipants.length,
+      participants: cardParticipants.map((participant) => ({
+        userId: participant.userId,
+        name: displayUserName(participant.userId),
+      })),
+    });
+    throw error;
   }
   const publishedRow = await publishMatchAsync(matchId, publishedAt);
   console.info("Supabase 카드 생성 후 경기 공개 반환 row", { matchId, publishedRow });
@@ -689,6 +775,7 @@ async function publishCompletedParticipants(matchId, completion, publishedAt) {
     refreshedMatchCards: refreshedCards?.matchCards?.filter((card) => card.matchId === matchId).length || 0,
     localMatchCards: (window.PlaylogOfficialData?.playerMatchCards || []).filter((card) => card.matchId === matchId).length,
   });
+  clearPublishFailure(matchId);
   return { published: true, generatedCards };
 }
 
@@ -706,11 +793,51 @@ async function syncMatchCompletionAndPublish(evaluation) {
 }
 
 async function syncDeadlineMatchPublication(match, now = new Date().toISOString()) {
-  if (!match || match.status === "published" || !isEvaluationDeadlineReached(match, now)) {
+  if (!match || match.status === "published") {
     return { published: false, generatedCards: [] };
   }
   const completion = await recalculateMatchEvaluationCompletionAsync(match.id);
+  if (!completion.allComplete && !isEvaluationDeadlineReached(match, now)) {
+    return { published: false, generatedCards: [] };
+  }
   return publishCompletedParticipants(match.id, completion, now);
+}
+
+async function retryPublishMatch(match, { toastOnSuccess = true } = {}) {
+  if (!match?.id || match.status === "published") return { published: false, generatedCards: [] };
+  if (manualPublishInFlight.has(match.id)) return { published: false, generatedCards: [] };
+  manualPublishInFlight.add(match.id);
+  try {
+    console.info("[Playlog] manual publish retry start", {
+      matchId: match.id,
+      matchTitle: match.title,
+      readiness: matchPublishReadiness(match),
+    });
+    const result = await syncDeadlineMatchPublication(match, new Date().toISOString());
+    if (result.published) {
+      clearPublishFailure(match.id);
+      if (toastOnSuccess) showToast("결과 공개가 완료되었습니다");
+      renderHome();
+      renderCards();
+      if (evaluationMode === "list") renderEvaluationList();
+      if (evaluationMode === "flow") renderEvaluation();
+    } else if (toastOnSuccess) {
+      showToast("아직 공개 조건을 확인하는 중입니다");
+    }
+    return result;
+  } catch (error) {
+    setPublishFailure(match.id, error, {
+      stage: "manualPublishRetry",
+      readiness: matchPublishReadiness(match),
+    });
+    reportSupabaseError(error, "Supabase 결과 공개 재시도 실패");
+    renderHome();
+    if (evaluationMode === "list") renderEvaluationList();
+    if (evaluationMode === "flow") renderEvaluation();
+    return { published: false, generatedCards: [] };
+  } finally {
+    manualPublishInFlight.delete(match.id);
+  }
 }
 
 function disableLocalEvaluationFallback() {
@@ -994,6 +1121,7 @@ function currentUserMatchState(match) {
 
 function matchStatusBadge(match) {
   if (match.status === "published") return "결과공개";
+  if (publishFailureFor(match.id) || matchPublishReadiness(match).missingCards) return "카드 생성 재시도";
   if (currentUserMatchState(match) === "투표 필요") return "투표 필요";
   if (currentUserMatchState(match) === "평가완료") return "결과공개대기";
   if (match.status === "closed") return "경기완료";
@@ -1003,6 +1131,7 @@ function matchStatusBadge(match) {
 function matchActionLabel(match) {
   if (currentUserMatchState(match) === "투표 필요") return "투표 진행";
   if (match.status === "published") return "결과 보기";
+  if (matchNeedsPublishRetry(match)) return "공개 재시도";
   if (currentUserMatchState(match) === "평가완료") return "공개 대기";
   return "평가 진행";
 }
@@ -1423,6 +1552,9 @@ function renderActiveMatchProgress() {
   queueDeadlineMatchPublications([match]);
   document.querySelector("#activeMatchAction").hidden = false;
   const waiting = window.PlaylogOfficialData.getPublishWaitingStatus?.(selectedMatchId);
+  const readiness = matchPublishReadiness(match);
+  const publishFailure = publishFailureFor(match.id);
+  const publishBlocked = Boolean(publishFailure) || readiness.missingCards;
   const pomResult = match.status === "published"
     ? window.PlaylogOfficialData.calculateMatchAward?.(selectedMatchId, "pom")
     : null;
@@ -1430,12 +1562,18 @@ function renderActiveMatchProgress() {
     ? window.PlaylogOfficialData.calculateMatchAward?.(selectedMatchId, "next_star")
     : null;
   const progressPercent = progress.totalCount ? Math.round((progress.completedCount / progress.totalCount) * 100) : 0;
-  document.querySelector("#activeMatchStatus").textContent = match.status === "published" ? "결과 공개" : "결과 공개 대기";
+  document.querySelector("#activeMatchStatus").textContent = match.status === "published"
+    ? "결과 공개"
+    : publishBlocked
+      ? "카드 생성 재시도"
+      : "결과 공개 대기";
   document.querySelector("#activeMatchTitle").textContent = match.title;
   document.querySelector("#activeMatchMeta").textContent = matchDisplayMeta(match);
   const waitingElement = document.querySelector("#activeMatchWaiting");
-  waitingElement.hidden = !waiting;
-  if (waiting) {
+  waitingElement.hidden = !(waiting || publishBlocked);
+  if (publishBlocked) {
+    waitingElement.textContent = `선수카드 생성이 완료되지 않았습니다 · ${readiness.cardCount}/${readiness.expectedCardCount} 카드 · 재시도 필요`;
+  } else if (waiting) {
     waitingElement.textContent = pomResult?.winnerUserIds?.length || nextStarResult?.winnerUserIds?.length
       ? [
         pomResult?.winnerUserIds?.length ? `POM: ${pomResult.winnerUserIds.map(displayUserName).join(" · ")}` : null,
@@ -1449,7 +1587,11 @@ function renderActiveMatchProgress() {
   document.querySelector("#activeMatchProgress").setAttribute("style", `--progress: ${progressPercent}`);
   document.querySelector("#activeMatchProgressValue").textContent = `${progress.completedCount}/${progress.totalCount}`;
   document.querySelector("#activeMatchProgressLabel").textContent = match.status === "published" ? "공개" : "평가";
-  document.querySelector("#activeMatchAction").textContent = match.status === "published" ? "결과 보기 ›" : "평가 진행 ›";
+  document.querySelector("#activeMatchAction").textContent = match.status === "published"
+    ? "결과 보기 ›"
+    : readiness.ready
+      ? "결과 공개 재시도 ›"
+      : "평가 진행 ›";
 }
 function average(values) {
   const usable = values.filter((value) => typeof value === "number");
@@ -3575,7 +3717,7 @@ const deadlinePublishInFlight = new Set();
 function queueDeadlineMatchPublications(matches) {
   if (!supabaseBridge()) return;
   matches
-    .filter((match) => match.status !== "published" && isEvaluationDeadlineReached(match))
+    .filter((match) => match.status !== "published" && matchPublishReadiness(match).ready)
     .forEach((match) => {
       if (deadlinePublishInFlight.has(match.id)) return;
       deadlinePublishInFlight.add(match.id);
@@ -3586,7 +3728,15 @@ function queueDeadlineMatchPublications(matches) {
           renderCards();
           if (evaluationMode === "list") renderEvaluationList();
         })
-        .catch((error) => reportSupabaseError(error, "Supabase 마감 경기 공개 처리 실패"))
+        .catch((error) => {
+          setPublishFailure(match.id, error, {
+            stage: "queuedPublish",
+            readiness: matchPublishReadiness(match),
+          });
+          reportSupabaseError(error, "Supabase 마감/완료 경기 공개 처리 실패");
+          renderHome();
+          if (evaluationMode === "list") renderEvaluationList();
+        })
         .finally(() => deadlinePublishInFlight.delete(match.id));
     });
 }
@@ -3805,14 +3955,25 @@ function renderEvaluation() {
     return;
   } else {
     const resultReady = !match || match.status === "published";
-    const actionLabel = remaining.length ? "다음 선수 평가하기" : resultReady ? "경기 전체 결과 보기" : "공개 대기 상태 보기";
+    const readiness = matchPublishReadiness(match);
+    const publishBlocked = match && !resultReady && (publishFailureFor(match.id) || readiness.missingCards);
+    const actionLabel = remaining.length
+      ? "다음 선수 평가하기"
+      : resultReady
+        ? "경기 전체 결과 보기"
+        : readiness.ready
+          ? "결과 공개 재시도"
+          : "공개 대기 상태 보기";
     const awardNote = hasStoredAwards ? "<p>결과 공개 시 선수카드와 투표 결과를 함께 확인할 수 있습니다.</p>" : "";
     const completeTitle = hasStoredAwards ? "경기 평가가 완료되었습니다." : "평가 저장 완료!";
     const completeCopy = resultReady
       ? "결과가 공개되었습니다."
-      : "평가가 저장되었습니다.<br>결과 공개를 기다리는 중입니다.";
-    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>${completeTitle}</h2><p>${completeCopy}</p>${awardNote}<div class="self-result"><span>${selectedTargetLabel} ${resultReady ? "생성 OVR" : "결과 상태"}</span><strong>${resultReady ? (lastGeneratedCard?.overallRating || "-") : "대기"}</strong></div><button class="primary full" data-complete-action type="button">${actionLabel}</button>${match && remaining.length === 0 ? '<button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요?</button>' : ""}</div>`;
-    pane.querySelector("[data-complete-action]")?.addEventListener("click", () => {
+      : publishBlocked
+        ? "평가는 저장됐지만 선수카드 생성이 완료되지 않았습니다.<br>결과 공개를 다시 시도해주세요."
+        : "평가가 저장되었습니다.<br>결과 공개를 기다리는 중입니다.";
+    const resultStatusLabel = resultReady ? (lastGeneratedCard?.overallRating || "-") : publishBlocked ? "재시도 필요" : "대기";
+    pane.innerHTML = `<div class="complete-card"><div class="checkmark">✓</div><h2>${completeTitle}</h2><p>${completeCopy}</p>${awardNote}<div class="self-result"><span>${selectedTargetLabel} ${resultReady ? "생성 OVR" : "결과 상태"}</span><strong>${resultStatusLabel}</strong></div><button class="primary full" data-complete-action type="button">${actionLabel}</button>${match && remaining.length === 0 ? '<button class="secondary full" data-start-match-reflection type="button">자가 회고도 남길까요?</button>' : ""}</div>`;
+    pane.querySelector("[data-complete-action]")?.addEventListener("click", async () => {
       if (remaining.length) {
         selectedPlayer = remaining[0].userId;
         loadEvaluationDraft(activeEvaluationForTarget(selectedPlayerId()));
@@ -3823,7 +3984,10 @@ function renderEvaluation() {
         return;
       }
       if (resultReady) openMatchResultView("summary");
-      else setView("home");
+      else if (matchNeedsPublishRetry(match)) {
+        const result = await retryPublishMatch(match);
+        if (result.published) openMatchResultView("summary");
+      } else setView("home");
     });
     pane.querySelector("[data-start-match-reflection]")?.addEventListener("click", () => startReflection(selectedMatchId));
     return;
@@ -5070,9 +5234,18 @@ function bindInteractions() {
     const toastButton = event.target.closest("[data-toast]");
     if (toastButton) showToast(toastButton.dataset.toast);
   });
-  document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", async () => {
     if (button.id === "activeMatchAction" && activeMatchRecord()) {
-      enterEvaluationFlow(activeMatchRecord());
+      const match = activeMatchRecord();
+      if (match.status === "published") {
+        openMatchResultView("summary");
+        return;
+      }
+      if (matchNeedsPublishRetry(match)) {
+        await retryPublishMatch(match);
+        return;
+      }
+      enterEvaluationFlow(match);
       return;
     }
     if (button.dataset.go === "evaluate") {

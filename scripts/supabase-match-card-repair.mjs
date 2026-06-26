@@ -276,6 +276,7 @@ async function main() {
 
   const generatedCards = [];
   const payloads = [];
+  const invalidGeneratedCards = [];
   for (const participant of targetParticipants) {
     const previousRows = await select(matchCardTable, "*", (query) =>
       query
@@ -312,7 +313,32 @@ async function main() {
       payload,
     });
     if (!isValidOverallRating(payload.overall_rating)) {
-      throw new Error(`Invalid overall_rating for user_id=${participant.user_id}: ${payload.overall_rating}`);
+      invalidGeneratedCards.push({
+        userId: participant.user_id,
+        overallRating: payload.overall_rating,
+        commonAverage: payload.common_average,
+        positionAverage: payload.position_average,
+        matchScore: payload.match_score,
+        evaluatorCount: payload.evaluator_count,
+        activeSourceEvaluations: evaluations
+          .filter((evaluation) =>
+            evaluation.isActive !== false
+            && evaluation.matchId === matchId
+            && evaluation.targetUserId === participant.user_id,
+          )
+          .map((evaluation) => ({
+            id: evaluation.id,
+            evaluatorUserId: evaluation.evaluatorUserId,
+            targetUserId: evaluation.targetUserId,
+            selectedPosition: evaluation.selectedPosition,
+            updatedAt: evaluation.updatedAt,
+            createdAt: evaluation.createdAt,
+            hasRatings: Boolean(evaluation.ratings && Object.keys(evaluation.ratings).length),
+            hasPositionScores: Boolean(evaluation.positionScores && Object.keys(evaluation.positionScores).length),
+          })),
+        payload,
+      });
+      continue;
     }
     generatedCards.push(card);
     payloads.push(payload);
@@ -341,6 +367,7 @@ async function main() {
       user_id: row.user_id,
       overall_rating: row.overall_rating,
     })),
+    invalidGeneratedCards,
     generatedCards: generatedCards.map((card) => ({
       id: card.id,
       userId: card.userId,
@@ -355,6 +382,9 @@ async function main() {
     return;
   }
 
+  if (invalidGeneratedCards.length) {
+    throw new Error(`Invalid generated cards found; refusing to run. Count=${invalidGeneratedCards.length}`);
+  }
   if (!payloads.length) throw new Error("No card payloads generated; refusing to run.");
   const { data, error } = await supabase
     .from(matchCardTable)
