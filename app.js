@@ -465,9 +465,74 @@ function withUpsertedCard(cards, card) {
   return nextCards;
 }
 
+function matchParticipantUserIds(matchId) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
+  return (match?.participants || [])
+    .map((participant) => (typeof participant === "string" ? participant : participant?.userId))
+    .filter(Boolean);
+}
+
+function evaluationDebugSummary(evaluation) {
+  const scores = evaluation?.scores || [];
+  return {
+    id: evaluation?.id,
+    matchId: evaluation?.matchId,
+    evaluatorUserId: evaluation?.evaluatorUserId,
+    targetUserId: evaluation?.targetUserId,
+    selectedPosition: evaluation?.selectedPosition,
+    isActive: evaluation?.isActive !== false,
+    commonScoreCount: scores.filter((score) => score.category === "common").length,
+    positionScoreCount: scores.filter((score) => score.category === "position").length,
+    scoreKeys: scores.map((score) => `${score.category}:${score.key}`),
+    createdAt: evaluation?.createdAt,
+    updatedAt: evaluation?.updatedAt,
+  };
+}
+
+function latestEvaluationDebugItems(evaluations = []) {
+  const byEvaluator = new Map();
+  evaluations.forEach((evaluation) => {
+    const key = evaluation.evaluatorUserId;
+    const existing = byEvaluator.get(key);
+    const evaluationTime = new Date(evaluation.updatedAt || evaluation.createdAt || 0).getTime();
+    const existingTime = existing ? new Date(existing.updatedAt || existing.createdAt || 0).getTime() : -Infinity;
+    if (!existing || evaluationTime >= existingTime) byEvaluator.set(key, evaluation);
+  });
+  return Array.from(byEvaluator.values());
+}
+
+function cardGenerationDiagnostics(matchId, targetUserId) {
+  const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
+  const participantUserIds = matchParticipantUserIds(matchId);
+  const participantSet = new Set(participantUserIds);
+  const sourceEvaluations = activeEvaluationCollection(matchId)
+    .filter((evaluation) => evaluation.matchId === matchId && evaluation.targetUserId === targetUserId);
+  const participantFiltered = sourceEvaluations.filter((evaluation) =>
+    evaluation.isActive !== false
+    && evaluation.evaluatorUserId !== targetUserId
+    && (!participantSet.size || (participantSet.has(evaluation.evaluatorUserId) && participantSet.has(evaluation.targetUserId))));
+  const finalPeerEvaluations = latestEvaluationDebugItems(participantFiltered);
+  return {
+    matchId,
+    targetUserId,
+    targetName: displayUserName(targetUserId),
+    matchType: isQuickMatch(match) ? "quick" : "official",
+    participantUserIds,
+    participantCount: participantUserIds.length,
+    sourceEvaluationCount: sourceEvaluations.length,
+    participantFilteredCount: participantFiltered.length,
+    finalPeerEvaluationCount: finalPeerEvaluations.length,
+    sourceEvaluations: sourceEvaluations.map(evaluationDebugSummary),
+    participantFilteredEvaluations: participantFiltered.map(evaluationDebugSummary),
+    finalPeerEvaluations: finalPeerEvaluations.map(evaluationDebugSummary),
+  };
+}
+
 function buildGeneratedCardBundle({ matchId, userId, generatedAt }) {
   const match = (window.PlaylogOfficialData?.matches || []).find((item) => item.id === matchId);
   const quick = isQuickMatch(match);
+  const diagnostics = cardGenerationDiagnostics(matchId, userId);
+  console.log("[Playlog] card generation source diagnostics", diagnostics);
   const matchCard = window.PlaylogOfficialData?.generateCardFor?.(
     matchId,
     userId,
@@ -485,8 +550,22 @@ function buildGeneratedCardBundle({ matchId, userId, generatedAt }) {
     positionAverage: matchCard.positionAverage,
     matchScore: matchCard.matchScore,
     evaluatorCount: matchCard.evaluatorCount,
+    diagnostics,
     card: matchCard,
   });
+  if (typeof matchCard.overallRating !== "number" || !Number.isFinite(matchCard.overallRating)) {
+    console.error("[Playlog] generated match card invalid OVR", {
+      matchId,
+      userId,
+      cardOverallRating: matchCard.overallRating,
+      commonAverage: matchCard.commonAverage,
+      positionAverage: matchCard.positionAverage,
+      matchScore: matchCard.matchScore,
+      evaluatorCount: matchCard.evaluatorCount,
+      diagnostics,
+      card: matchCard,
+    });
+  }
 
   const sourceMatchCards = quick
     ? (window.PlaylogOfficialData?.quickPlayerMatchCards || [])
@@ -3651,19 +3730,25 @@ function renderEvaluation() {
         <div class="highlight-grid">${evaluationFields.highlights.map((field) => `<button class="chip compact ${selectedHighlights.includes(field.key) ? "selected" : ""}" data-highlight="${field.key}" type="button">${field.label}</button>`).join("")}</div>
         ${selectionActions()}`;
   } else if (currentStep === 5) {
+    const previewEvaluation = buildEvaluation("evaluation:preview");
+    const previewParticipantUserIds = matchParticipantUserIds(selectedMatchId);
     const previewCard = window.PlaylogEngine.generatePlayerMatchCard({
       matchId: selectedMatchId,
       userId: selectedPlayerId(),
-      evaluations: [buildEvaluation("evaluation:preview")],
+      evaluations: [previewEvaluation],
+      participantUserIds: previewParticipantUserIds,
     });
     console.log("[Playlog] evaluation preview OVR check", {
       matchId: selectedMatchId,
       userId: selectedPlayerId(),
+      targetName: selectedTargetLabel,
+      participantUserIds: previewParticipantUserIds,
       previewOverallRating: previewCard?.overallRating,
       previewOverallRatingType: typeof previewCard?.overallRating,
       previewCommonAverage: previewCard?.commonAverage,
       previewPositionAverage: previewCard?.positionAverage,
       previewMatchScore: previewCard?.matchScore,
+      previewEvaluation: evaluationDebugSummary(previewEvaluation),
       previewCard,
     });
     pane.innerHTML = `<label class="field-label evaluation-comment"><span>이 선수 한 줄 평</span><textarea id="evaluationComment" rows="4" placeholder="${evaluationCommentPlaceholder}">${escapeHtml(overallComment)}</textarea></label><div class="self-result"><span>${selectedTargetLabel} 예상 OVR</span><strong>${previewCard.overallRating}</strong></div>${actions("이전", "평가 저장 완료")}`;

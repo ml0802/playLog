@@ -102,6 +102,17 @@ assert.equal(duplicatePositionCard.selectedPositionSummary.defense.count, 1);
 assert.equal(duplicatePositionCard.selectedPositionSummary.am.count, 0);
 assert.ok(duplicatePositionTotal <= 4);
 
+const stringParticipantCard = engine.generatePlayerMatchCard({
+  matchId,
+  userId,
+  participantUserIds: [userId, "user:a"],
+  evaluations: [evaluation("string-participant", "user:a", "attack", common, {
+    finishing: 7, attackingPositioning: 7, attackingLinkUp: 7, frontPressure: 7, ballKeeping: 7,
+  })],
+});
+assert.equal(stringParticipantCard.evaluatorCount, 1);
+assert.equal(stringParticipantCard.overallRating, 75);
+
 const tiedAnalysis = engine.generateMatchAnalysis([
   { category: "common", key: "firstTouch", score: 9 },
   { category: "position", key: "chanceMaking", score: 8 },

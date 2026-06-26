@@ -293,7 +293,9 @@
     const cardCollection = cardCollectionForMatch(match);
     const evaluationCollection = evaluationCollectionForMatch(match);
     const matchRecord = matches.find((item) => item.id === match);
-    const participantUserIds = (matchRecord?.participants || []).map((participant) => participant.userId);
+    const participantUserIds = (matchRecord?.participants || [])
+      .map((participant) => (typeof participant === "string" ? participant : participant?.userId))
+      .filter(Boolean);
     const engineEvaluations = matchTypeFor(match) === "quick"
       ? engine.expandQuickEvaluations(evaluationCollection)
       : evaluationCollection;
